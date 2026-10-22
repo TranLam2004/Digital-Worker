@@ -1,0 +1,5 @@
+--- FAIL: TestReserveOverStock (0.00s)
+    shop_test.go:44: expected InsufficientStock, got nil
+FAIL
+FAIL	shop	0.108s
+FAIL

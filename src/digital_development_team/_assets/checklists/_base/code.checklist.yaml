@@ -1,0 +1,147 @@
+# _base/code — applies to EVERY patch in every language. 14 items. 9 regex (0 LLM).
+meta:
+  name: code-base
+  source: base
+  applies_to_default: [patch]
+  version: 1
+  owner: P3
+
+items:
+  # ───── Debug leftovers / noise — regex, 0 LLM ─────
+  - id: CODE-001
+    text: "No new print/console.log/debugger/dd()/var_dump statement is added in the diff"
+    rationale: "Prevents debug output from leaking into production logs and stdout, where it adds noise and can expose internal state."
+    verify: regex
+    pattern: "^\\+.*\\b(print\\(|console\\.(log|debug)\\(|debugger\\b|dd\\(|var_dump\\(|System\\.out\\.print|fmt\\.Println)"
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    enabled: true
+
+  - id: CODE-002
+    text: "Every new TODO/FIXME/XXX/HACK marker references an issue (#123 or DDT-xxx)"
+    rationale: "Prevents untracked technical debt: a marker without an issue reference is never scheduled and silently rots in the codebase."
+    verify: regex
+    pattern: "^\\+.*\\b(TODO|FIXME|XXX|HACK)\\b(?!.*#\\d+)(?!.*DDT-)"
+    pattern_scope: added_lines
+    severity: minor
+    applies_to: [patch]
+    enabled: true
+
+  - id: CODE-003
+    text: "No new comment or decorator disables lint, type checking or tests (noqa, type: ignore, eslint-disable, @skip, @ts-ignore)"
+    rationale: "Prevents masking a defect instead of fixing it; a suppressed warning or skipped test hides exactly the regression it was meant to catch."
+    verify: regex
+    pattern: "^\\+.*(#\\s*noqa|#\\s*type:\\s*ignore|eslint-disable|@ts-ignore|@ts-nocheck|@pytest\\.mark\\.skip|@unittest\\.skip|\\.skip\\(|xit\\(|xdescribe\\(|t\\.Skip\\()"
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "not spec.goal.contains('skip')"
+    enabled: true
+
+  - id: CODE-004
+    text: "No new block of commented-out code is added (3 or more consecutive comment lines that contain code)"
+    rationale: "Prevents dead code that readers mistake for live logic and that drifts out of sync with the real implementation."
+    verify: regex
+    pattern: "(^\\+\\s*(#|//)\\s*\\w+\\s*[=(].*\\n){3,}"
+    pattern_scope: added_lines
+    severity: minor
+    applies_to: [patch]
+    enabled: true
+
+  # ───── Error handling ─────
+  - id: CODE-005
+    text: "No new catch-all exception handler swallows the error without re-raising or logging it (except Exception: pass / catch(e){})"
+    rationale: "Prevents silently swallowed failures that leave the system in an unknown state with no trace for diagnosis."
+    verify: regex
+    pattern: "^\\+\\s*(except\\s*(Exception|BaseException)?\\s*:\\s*(pass|\\.\\.\\.)|catch\\s*\\([^)]*\\)\\s*\\{\\s*\\})"
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: CODE-006
+    text: "Every new raise uses a specific exception class, never a bare raise Exception('...') or Error('...')"
+    rationale: "Prevents callers from being unable to distinguish failure modes, which forces them into catch-all handlers."
+    verify: regex
+    pattern: "^\\+.*\\braise\\s+(Exception|Error)\\s*\\("
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    enabled: true
+
+  # ───── Secrets / hard-coded values — regex ─────
+  - id: CODE-007
+    text: "No secret, token, password or API key is hard-coded in added lines"
+    rationale: "Prevents credential exposure through version control; a committed secret must be treated as compromised and rotated."
+    verify: regex
+    pattern: "^\\+.*(password|passwd|secret|api[_-]?key|token|private[_-]?key)\\s*[=:]\\s*['\"][^'\"]{8,}['\"]"
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: CODE-008
+    text: "No environment-specific URL, IP or port is hard-coded outside test files (localhost:, 127.0.0.1, http://prod)"
+    rationale: "Prevents breakage when the code is deployed to another environment where the hard-coded address no longer resolves."
+    verify: regex
+    pattern: "^\\+.*['\"](https?://)?(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})(:\\d+)?['\"/]"
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    applies_when: "not any_match(files_touched, ['**/test*/**', '**/conftest*', '**/*.test.*', '**/*_test.*'])"
+    enabled: true
+
+  # ───── Imports / dependencies — regex ─────
+  - id: CODE-009
+    text: "No new import references a package that is missing from the dependency manifest"
+    rationale: "Prevents a runtime ImportError in a clean environment where the undeclared package is not installed."
+    verify: test
+    test_ref: import_check
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  # ───── Conventions — agent reads the diff ─────
+  - id: CODE-010
+    text: "Naming follows REPO.md#convention (snake_case/camelCase as the language dictates, no unfamiliar abbreviations)"
+    rationale: "Prevents code that reads as model-generated rather than written by the repo's maintainers, which raises review friction and rework."
+    verify: diff_inspection
+    severity: minor
+    applies_to: [patch]
+    enabled: true
+
+  - id: CODE-011
+    text: "Every new public function or method has a docstring/JSDoc in the style defined in REPO.md"
+    rationale: "Prevents violating the repo's documentation convention and leaving new public API undocumented for its callers."
+    verify: diff_inspection
+    severity: minor
+    applies_to: [patch]
+    applies_when: "repo.convention.docstring_required"
+    enabled: true
+
+  - id: CODE-012
+    text: "No new function is longer than 60 lines or nests deeper than 4 levels"
+    rationale: "Prevents functions that are hard to unit-test and hard to review, where defects hide in deeply nested branches."
+    verify: diff_inspection
+    severity: minor
+    applies_to: [patch]
+    enabled: true
+
+  # ───── Scope — agent reads the diff ─────
+  - id: CODE-013
+    text: "Every hunk in the diff serves at least one acceptance criterion — no opportunistic drive-by refactoring"
+    rationale: "Prevents scope creep: a larger diff slows review and can push the issue into a higher risk tier."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    enabled: true
+
+  - id: CODE-014
+    text: "When a function signature changes, every caller listed in plan.callers_affected is updated in the same patch"
+    rationale: "Prevents a patch that is green in isolation but red on merge because callers still use the old signature."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "plan.candidates[0].callers_affected.length > 0"
+    enabled: true

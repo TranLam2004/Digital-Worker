@@ -1,0 +1,74 @@
+# domain/ecommerce — applies when REPO.md.domain == ecommerce. 7 items. Business rules, not technical ones.
+meta:
+  name: ecommerce
+  source: domain
+  applies_to_default: [patch, spec]
+  version: 1
+  owner: P2
+  applies_when_repo: "domain == 'ecommerce'"
+  glossary_ref: ../../50-knowledge/_template.DOMAIN.md
+
+items:
+  - id: ECOM-001
+    text: "Price, quantity and total can never become negative after the change — enforced by validation or a constraint"
+    rationale: "Prevents negative prices, which mean money flowing back to the customer."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/order*/**','**/cart*/**','**/price*/**','**/product*/**','**/payment*/**'])"
+    enabled: true
+
+  - id: ECOM-002
+    text: "Money uses Decimal/BigDecimal or integer cents — no float/double for prices or totals"
+    rationale: "Prevents floating-point drift (0.1 + 0.2 ≠ 0.3) in monetary calculations."
+    verify: regex
+    pattern: "^\\+.*\\b(price|amount|total|subtotal|discount|tax|fee|cost)\\w*\\s*[:=]\\s*(float|double|Float|Double|parseFloat|\\d+\\.\\d+(?!\\s*\\*\\s*100))"
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: ECOM-003
+    text: "Order status changes follow the valid state machine (no shipped→cart, no cancel after delivered except through the return flow)"
+    rationale: "Prevents orders in meaningless states that downstream fulfilment and accounting cannot handle."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/order*/**'])"
+    enabled: true
+
+  - id: ECOM-004
+    text: "Inventory is decremented on order (reserve), restored on cancel, and never negative — with a lock or transaction when concurrent"
+    rationale: "Prevents overselling stock that does not exist when orders arrive concurrently."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/inventory*/**','**/stock*/**','**/order*/**'])"
+    enabled: true
+
+  - id: ECOM-005
+    text: "Tax, discount and shipping are computed in the order defined in REPO.md#domain-rules (e.g. discount before tax) and rounded only at the final step"
+    rationale: "Prevents a one-unit rounding discrepancy that, multiplied by a million orders, becomes a material accounting error."
+    verify: llm
+    severity: major
+    applies_to: [patch, spec]
+    applies_when: "any_match(files_touched, ['**/price*/**','**/checkout*/**','**/cart*/**'])"
+    enabled: true
+
+  - id: ECOM-006
+    text: "Currency: every amount carries a currency code; two amounts in different currencies are never added together"
+    rationale: "Prevents adding USD to VND, which produces a meaningless total."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "repo.domain_rules.multi_currency"
+    enabled: true
+
+  - id: ECOM-007
+    text: "A spec for an ecommerce change request has ACs for: empty order, product going out of stock mid-checkout, expired coupon"
+    rationale: "Prevents omitting the business edge cases that are most often forgotten and reported as bugs after release."
+    verify: llm
+    severity: major
+    applies_to: [spec]
+    applies_when: "intake.type == 'change_request'"
+    enabled: true

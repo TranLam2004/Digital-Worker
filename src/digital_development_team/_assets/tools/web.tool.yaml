@@ -1,0 +1,29 @@
+# web.* — look things up when the KB and the repo have no answer. Only hosts in policy.network.allow; https only.
+namespace: web
+sandbox: false
+artifactize: true
+ops:
+  - name: search
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev, security]
+    timeout_sec: 150
+    description: "Web search for documentation or an error message. Returns results[{title, url, snippet, fetchable, trust}]; only `fetchable` URLs can be opened with web.fetch. trust=ugc means forum/repo content, not official docs. Query ≤200 chars, never put code or secrets in it. Errors: NOT_AVAILABLE (no search backend), net:* (query rejected)."
+    input_schema:
+      type: object
+      properties:
+        query: { type: string, minLength: 3, maxLength: 200 }
+        max_results: { type: integer, minimum: 1, maximum: 8 }
+      required: [query]
+      additionalProperties: false
+  - name: fetch
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev, security]
+    timeout_sec: 60
+    description: "Open one https documentation page from the allowlist (redirects are re-checked). With `question`, a cheap model answers from the page and quotes it — use this instead of reading whole pages. Without it, returns the page as text (large pages become an artifact). Errors: net:host_not_allowed, HTTP_ERROR, NOT_TEXT, TOO_LARGE."
+    input_schema:
+      type: object
+      properties:
+        url: { type: string, maxLength: 512 }
+        question: { type: string, maxLength: 500 }
+      required: [url]
+      additionalProperties: false

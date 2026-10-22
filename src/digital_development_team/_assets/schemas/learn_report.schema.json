@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ddt/learn_report",
+  "title": "LearnReport",
+  "description": "Written by the Learner after studying a finished issue: what it saved to memory. Audit only; the memory itself was written through memory.* tools.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "lesson_saved"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 10,
+      "maxLength": 400,
+      "description": "One or two sentences: what this issue teaches, or why there is nothing to keep."
+    },
+    "lesson_saved": {
+      "type": "boolean",
+      "description": "true when memory.write_episode succeeded."
+    },
+    "facts": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string"
+      },
+      "description": "Fact ids proposed or retired."
+    },
+    "skills": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "string"
+      },
+      "description": "Learned skill names written, with their status (candidate or quarantined)."
+    }
+  }
+}

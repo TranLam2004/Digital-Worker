@@ -1,0 +1,11 @@
+{
+  "role": "intake",
+  "case": "calc_mean",
+  "steps": [
+    {
+      "text": "{\"issue_id\": \"DDT-0001\", \"type\": \"bug\", \"severity\": \"P2\", \"complexity\": \"small\", \"risk_tier\": \"T1\", \"route\": \"standard\", \"confidence\": 0.86, \"affected_area\": \"calc\", \"entry_hints\": [\"mean\", \"ZeroDivisionError\", \"len(xs)\"], \"test_command_guess\": \"pytest -q\", \"requires_human_before_code\": false, \"rationale\": \"Có lệnh repro và stack trace; một hàm trong calc.py; hành vi mong đợi nêu rõ (ValueError).\"}",
+      "expect_in_prompt": ["<untrusted_input", "ZeroDivisionError", "## OUTPUT CONTRACT"],
+      "usage": {"tokens_in": 1800, "tokens_out": 140}
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "role": "analyst",
+  "case": "calc_mean",
+  "steps": [
+    {
+      "text": "{\"issue_id\": \"DDT-0001\", \"goal\": \"mean([]) raise ValueError('mean of empty list') thay vì ZeroDivisionError; hành vi khác giữ nguyên.\", \"acceptance_criteria\": [{\"id\": \"AC1\", \"text\": \"mean([]) raise ValueError\", \"verify_by\": \"test\", \"test_ref\": \"tests/test_calc.py::test_mean_empty\", \"mvs_ids\": [\"MVS-1\"], \"test_command\": \"pytest -q tests/test_calc.py::test_mean_empty\"}, {\"id\": \"AC2\", \"text\": \"mean([2, 4]) == 3.0 vẫn pass\", \"verify_by\": \"test\", \"test_ref\": \"tests/test_calc.py::test_mean\", \"mvs_ids\": [\"MVS-2\"], \"test_command\": \"pytest -q tests/test_calc.py::test_mean\"}, {\"id\": \"AC3\", \"text\": \"Không đụng file ngoài calc.py và tests/test_calc.py\", \"verify_by\": \"diff_inspection\"}], \"allowed_files\": [\"calc.py\", \"tests/test_calc.py\"], \"forbidden_files\": [\"REPO.md\", \"pytest.ini\"], \"test_command\": \"pytest -q tests/test_calc.py\", \"regression_command\": \"pytest -q\", \"rollback_plan\": \"git revert HEAD\", \"out_of_scope\": [\"đổi kiểu trả về của mean\", \"thêm median/mode mới\"], \"ambiguities\": [{\"question\": \"Thông điệp lỗi có cần giống median không?\", \"assumed\": \"Dùng 'mean of empty list' cho nhất quán với 'median of empty list'\"}], \"estimated_tier\": \"T1\"}",
+      "expect_in_prompt": [
+        "### intake.yaml",
+        "### plan.yaml",
+        "### SKILL: spec-writing",
+        "calc.py"
+      ],
+      "usage": {
+        "tokens_in": 4200,
+        "tokens_out": 420
+      }
+    }
+  ]
+}

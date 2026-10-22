@@ -1,0 +1,417 @@
+# policy.yaml — every operational threshold. Hot-reloaded at the start of each stage. Every edit → auto commit.
+# Expressions: ddt.expr syntax (and/or/not, comparisons, len(), any_match(), any_in(), pluck(), default(), has()).
+# A missing value = error (fail closed). Optional fields must be wrapped in default(x, false).
+version: 1
+
+# ───────────────────────────── Operations ─────────────────────────────
+wip_limit: 3
+wip_max: 5
+autonomy: balanced               # conservative | balanced | aggressive | autonomous (contest: never waits for a human)
+sweep_mode: false
+economy_mode: false
+minimal: false                   # --minimal → 4 roles
+no_learn: false                  # --no-learn
+transcripts: true                # ghi transcript từng lần chạy agent (brief · turn · tool) cho dashboard; --no-transcripts
+retriage_interval_sec: 600
+leader_persistent_context: true
+leader_ctx_compress_at: 40000
+leader_ctx_reset_at: 60000
+
+# ───────────────────────────── Gates ─────────────────────────────
+gates:
+  g0:
+    trigger:                     # OR
+      - "intake.type == 'security_incident'"
+      - "intake.risk_tier == 'T3'"
+      - "intake.confidence < 0.6"
+      - "default(intake.requires_human_before_code, false)"
+    timeout_sec: { T0: 90, T1: 90, T2: 90, T3: null }
+    default_on_timeout: proceed_conservative
+  g1:
+    requires_human_when:         # OR
+      - "state.tier in ['T2', 'T3']"
+      - "confidence < limits.conf_proceed"
+      - "evidence.verdict == 'inconclusive'"
+    timeout_sec: { T0: 0, T1: 0, T2: 300, T3: null }   # 0 và null = KHÔNG timeout — T0/T1 chỉ tới G1 khi conf thấp → chờ người
+    default_on_timeout: proceed_with_recommendation      # T2 sau timeout: tự merge CHỈ KHI Verifier + Security đều pass
+    t3_witnesses: 1
+    batch_approve_tiers: [T0]
+  g2:
+    timeout_sec: { T0: null, T1: null, T2: null, T3: null }
+    session_approval_memory: true
+  g3:
+    stop_file: state/STOP
+
+# ───────────────────────────── Confidence ─────────────────────────────
+confidence_weights:
+  test_signal: 0.30
+  verifier_agreement: 0.25
+  spec_clarity: 0.20
+  familiarity: 0.15
+  rework_penalty: 0.20
+conf_proceed: 0.80                # fallback when the active autonomy has no preset — the preset's value wins
+conf_bump_range: [0.50, 0.80]
+conf_escalate: 0.50
+autonomy_presets:
+  conservative: { conf_proceed: 0.90, conf_bump_range: [0.50, 0.90], g1_t2_timeout: null, g0_timeout: 180, dev_permission: ask_all }
+  balanced:     { conf_proceed: 0.80, conf_bump_range: [0.50, 0.80], g1_t2_timeout: 300,  g0_timeout: 90,  dev_permission: accept_edits }
+  aggressive:   { conf_proceed: 0.70, conf_bump_range: [0.50, 0.70], g1_t2_timeout: 120,  g0_timeout: 60,  dev_permission: accept_edits }
+  # Contest (--match): gates open a ticket for the record but the harness decides at once — a human touching the machine
+  # costs 50 points. Empty bump range = no "+1 tier" for mid confidence; a brand-new repo has no history → familiarity 0.6.
+  autonomous:   { conf_proceed: 0.70, conf_bump_range: [0.50, 0.50], g1_t2_timeout: 1,    g0_timeout: 1,   dev_permission: accept_edits,
+                  auto_decide: true, familiarity_unknown: 0.6 }
+gate_rule_tiers: [T0]            # GATE decides by rule (no Leader call) for these tiers when everything passed; --match adds T1
+split_enabled: true              # plan.subtasks → SPLIT child issues; --match turns it off (one submission per contest item)
+deadline_margin_s: 90            # stop working this long before an item's deadline (time to push + submit)
+review_skip_tiers: [T0]          # REVIEW (Security LLM) skipped when the security regex checklist is clean and no sensitive path; --match adds T1
+
+# ───────────────────────────── Tier rules — MAX, never lowered ─────────────────────────────
+tier_rules:
+  - { when: "intake.type == 'security_incident'",                                   tier: T3 }
+  - { when: "any_in(files_touched, sensitive_paths)",                                tier: T3 }
+  - { when: "any_match(files_touched, '**/migrations/**')",                          tier: T3 }
+  - { when: "any_match(files_touched, ['.github/**', '.gitlab-ci.yml', 'Dockerfile*', 'docker-compose*'])", tier: T3 }
+  - { when: "'delete' in pluck(default(plan.steps, []), 'action')",                  tier: T3 }
+  - { when: "default(sec_report.verdict, '') == 'needs_human'",                      tier: T3 }
+  - { when: "len(files_touched) >= 6",                                               tier: T2 }
+  - { when: "default(codegraph_impact_risk, '') == 'high'",                          tier: T2 }
+  - { when: "any_match(files_touched, ['requirements*.txt', 'package.json', 'go.mod', 'pom.xml'])", tier: T2 }
+  - { when: "default(evidence.verdict, '') == 'inconclusive'",                       tier: T2 }
+  - { when: "default(verifier_canary_catch_rate, 1.0) < 0.7",                        tier: "+1" }
+  - { when: "limits.conf_bump_lo <= confidence < limits.conf_bump_hi",               tier: "+1" }
+  - { when: "has(spec, 'estimated_tier')",                                           tier: "$value" }
+  - { when: "has(intake, 'risk_tier')",                                              tier: "$value" }
+  - { tier: T1 }
+
+# ───────────────────────────── Retry ─────────────────────────────
+max_rework: { T0: 1, T1: 2, T2: 2, T3: 3 }
+max_reloc: { T0: 0, T1: 1, T2: 1, T3: 1 }
+machine_gate_free_retries: 2
+slot_write_attempts: 3
+rework_model_escalation_at: 2
+recovery:                        # runner/recovery.py — sắp BLOCKED: phân loại lỗi (0 LLM) → bậc đầu còn lượt khớp lớp lỗi
+  enabled: true
+  extra_budget_pct: 25           # đang phục hồi → trần issue +25% (không cắt budget của luồng thường)
+  max_reopens: 2                 # `ddt reopen` tối đa N lần mỗi issue
+  ladder:                        # to: auto = stage vừa hỏng nếu là stage agent, không thì IMPLEMENT
+    - { rung: retry_informed, max: 1, classes: [no_output, agent_gave_up, verifier_unavailable], to: auto }
+    - { rung: re_spec,        max: 1, classes: [scope, test_command, spec_conflict],               to: SPEC }
+    - { rung: re_localize,    max: 1, classes: [test_fail],                                        to: LOCALIZE }
+    - { rung: model_upgrade,  max: 1, classes: [test_fail, stuck, agent_gave_up, no_output, budget_stage], to: auto, model_role: "{role}_strong" }
+    - { rung: decompose,      max: 1, classes: [too_large, budget_issue, budget_stage],              to: LOCALIZE,   # Planner tách plan.subtasks → SPLIT
+        stages: [IMPLEMENT, MACHINE_GATE, VERIFY, REVIEW, GATE, G1_WAIT] }   # việc quá lớn chỉ lộ ra khi đã bắt tay code
+task_types:                      # profile theo intake.type → CONSTRAINTS của Dev/Verifier/Analyst · preflight · budget
+  default:
+    dev: ["Write a failing test first (RED), make the minimal change (GREEN), run test_command before submitting"]
+  bug:
+    dev:
+      - "Reproduce first with a failing test; find the root cause before editing (systematic-debugging)"
+      - "Make the minimal fix, run test_command and the mutation spot-check before submitting"
+  production_incident:            # contest PI: scored by finish rank (fastest = 100%), so move fast but must PASS
+    dev:
+      - "The report is a symptom, not a location: reproduce it first (failing test or a command that shows the failure), then trace to the root cause"
+      - "Make the minimal fix that restores the reported behaviour; do not refactor; run test_command and regression_command"
+    verifier: ["pass needs: the reported symptom no longer reproduces and regression passes"]
+    analyst: ["AC1 = the reported symptom no longer happens (verify_by: test); test_command reproduces the symptom"]
+  change_request:
+    budget_multiplier: 1.2
+    dev: ["Write a failing test for each AC first (RED), then implement (GREEN), run test_command before submitting"]
+  refactor:
+    budget_multiplier: 1.3
+    dev:
+      - "Behaviour must not change: do NOT add a failing test; existing tests must pass before and after, unchanged"
+      - "Skip the mutation spot-check; run test_command and regression_command before submitting"
+    verifier: ["pass needs: existing tests unchanged and passing + diff inspection showing no behaviour change"]
+    analyst: ["ACs: 'existing tests pass unchanged' (verify_by: test) plus the structural goal (verify_by: diff_inspection)"]
+  docs:
+    test_command: optional
+    budget_multiplier: 0.6
+    dev: ["Docs/comments only: no failing test, no mutation check, no change to code behaviour"]
+    verifier: ["Check ACs by diff_inspection and confirm no code behaviour changed"]
+    analyst: ["ACs use verify_by: diff_inspection; test_command may be omitted; allowed_files = the documentation files"]
+  test:
+    dev:
+      - "Only test files may change. The new tests must pass against the current code (no failing-test-first)"
+      - "Prove each new test can fail: break the code locally once, see the test fail, revert"
+    verifier: ["Check the new tests exercise the target: a mutation of the code under test must make them fail"]
+    analyst: ["allowed_files = test files only; each AC names the behaviour a new test must cover"]
+  config:
+    test_command: optional
+    dev: ["Configuration/CI change: keep it minimal and validate it with the tool that reads it (or regression_command)"]
+    verifier: ["Check the configuration parses/loads and regression_command passes"]
+  dependency:
+    budget_multiplier: 1.3
+    dev:
+      - "Manifest edits need G2 approval once per issue; pin exact versions; never use a URL or path dependency"
+      - "Run the full regression_command after the change"
+    verifier: ["Regression must pass; the manifest/lockfile change must match the requested package and version"]
+  perf:
+    budget_multiplier: 1.5
+    dev: ["Measure before and after with the same command; put both numbers in impl_log"]
+    verifier: ["Re-run the measurement; pass only if the AC's measurable target is met and regression passes"]
+    analyst: ["At least one AC states a measurable target and the exact command that measures it"]
+  chore:
+    test_command: optional
+    budget_multiplier: 0.8
+    dev: ["Mechanical change only (rename, formatting, cleanup); run regression_command"]
+  # question · spike: TRIAGE → ANSWER (transitions), Dev điều tra rồi trả lời trong answer.yaml, không sửa code
+
+spec_amend:                      # runner/spec_amend.py — sửa spec giữa chừng qua options[].spec_patch của escalation
+  max_allowed_files: 20
+  auto_enabled: true             # tự duyệt KHÔNG cần người: chỉ thêm file (không đổi lệnh), ≤ auto_max_paths,
+  auto_max_paths: 3              #   file test hoặc cùng thư mục với file đã được phép, không nhạy cảm
+  auto_max_per_issue: 1
+
+# ───────────────────────────── Transitions — first matching rule wins, a default is required ─────────────────────────────
+# Scope: intake · plan · spec · evidence · sec_report · decision (slot thật trên blackboard) · machine_gate · checklist ·
+#        merge · g1_required · outcome{kind} · escalated{gate, stage, count} · gate{choice, route, return_to}
+#        state{tier, rework, reloc, mg_retries, touches_sensitive} · limits{max_rework, max_reloc, ...} · confidence
+transitions:
+  INGEST:
+    - { to: TRIAGE }
+  TRIAGE:
+    - { when: "default(outcome.kind, '') == 'escalation'", to: G0_WAIT }      # agent hỏi người (04-escalation)
+    - { when: "default(outcome.kind, '') == 'blocked'", to: BLOCKED }
+    - { when: "intake.route == 'fast' and intake.type == 'question'", to: ANSWER }
+    - { when: "intake.type == 'security_incident' or intake.risk_tier == 'T3' or intake.confidence < 0.6 or default(intake.requires_human_before_code, false)", to: G0_WAIT }
+    - { when: "intake.type in ['question', 'spike']", to: ANSWER }         # câu hỏi/điều tra route nào cũng trả lời
+    - { to: LOCALIZE }
+  G0_WAIT:
+    - { when: "gate.choice == 'reject' or default(gate.route, '') == 'abort'", to: BLOCKED, final: true }
+    - { when: "default(gate.route, '') == 're_spec'", to: SPEC, bump: { respec: "+1" } }
+    # câu trả lời escalation quay về đúng stage đã hỏi; agent nhận câu trả lời trong brief
+    - { when: "default(gate.return_to, '') == 'TRIAGE'", to: TRIAGE }
+    - { when: "default(gate.return_to, '') == 'SPEC'", to: SPEC }
+    - { when: "default(gate.return_to, '') == 'IMPLEMENT'", to: IMPLEMENT }
+    - { when: "default(gate.return_to, '') == 'ANSWER'", to: ANSWER }
+    - { when: "default(intake.type, '') in ['question', 'spike']", to: ANSWER }
+    - { to: LOCALIZE }
+  LOCALIZE:
+    - { when: "default(outcome.kind, '') == 'escalation'", to: G0_WAIT }
+    - { when: "default(outcome.kind, '') == 'blocked'", to: BLOCKED }
+    # Planner thấy quá lớn → tách thành issue con (chỉ một tầng: issue con không tách tiếp)
+    - { when: "policy.split_enabled and len(default(plan.subtasks, [])) >= 2 and default(item.raw.split_from, '') == ''", to: SPLIT }
+    - { to: SPEC }
+  SPLIT:
+    - { when: "default(split.created, 0) >= 2", to: DONE }
+    - { to: SPEC }               # tách không được → làm như một issue
+  SPEC:
+    - { when: "default(outcome.kind, '') == 'escalation'", to: G0_WAIT }
+    - { when: "default(outcome.kind, '') == 'blocked'", to: BLOCKED }
+    - { when: "len(default(spec.ambiguities, [])) > 0 and intake.confidence < 0.7 and state.g0_visits == 0", to: G0_WAIT }
+    - { to: IMPLEMENT }
+  IMPLEMENT:
+    # preflight (0 LLM) thấy lệnh trong spec không dùng được → Analyst viết lại spec một lần
+    - { when: "default(preflight.status, '') == 'bad_spec' and state.respec < 1", to: SPEC, bump: { respec: "+1" } }
+    - { when: "default(outcome.kind, '') == 'escalation' and escalated.gate == 'G0'", to: G0_WAIT }
+    - { when: "default(outcome.kind, '') == 'escalation'", to: G1_WAIT }
+    - { when: "outcome.kind == 'blocked'", to: BLOCKED }
+    - { when: "default(outcome.slot, '') == 'answer.yaml'", to: GATE }   # Dev chứng minh không cần sửa → Leader quyết close
+    - { to: MACHINE_GATE }
+  MACHINE_GATE:
+    - { when: "machine_gate.any_fail and state.mg_retries < limits.machine_gate_free_retries", to: IMPLEMENT, mg_retries: "+1" }
+    - { when: "machine_gate.any_fail and state.rework < limits.max_rework", to: IMPLEMENT, rework: "+1" }
+    - { when: "machine_gate.any_fail", to: BLOCKED }
+    - { when: "default(checklist.blocking_fail, false) and state.rework < limits.max_rework", to: IMPLEMENT, rework: "+1", note: "checklist regex blocking — 0 LLM" }
+    - { to: [VERIFY, REVIEW] }
+  VERIFY:
+    # luật của cả nhóm VERIFY ∥ REVIEW: outcome = của VERIFY, outcomes.REVIEW = của Security
+    - { when: "default(outcome.kind, '') == 'escalation' or default(outcomes.REVIEW.kind, '') == 'escalation'", to: G1_WAIT }
+    - { when: "default(outcome.kind, '') == 'blocked' and state.verify_retries < 1", to: VERIFY, bump: { verify_retries: "+1" }, note: "Verifier blocked — chạy lại một lần; lần hai harness ghi inconclusive" }
+    - { when: "evidence.verdict == 'pass'", to: GATE }
+    - { when: "evidence.verdict == 'inconclusive'", to: GATE }
+    - { when: "state.rework < limits.max_rework", to: IMPLEMENT, rework: "+1", cancel: REVIEW }
+    - { when: "state.reloc < limits.max_reloc", to: LOCALIZE, reloc: "+1", cancel: REVIEW }
+    - { to: BLOCKED }
+  REVIEW:
+    - { when: "state.tier in policy.review_skip_tiers and default(checklist.security_regex_pass, true) and not default(state.touches_sensitive, false)", to: GATE, skip: true }
+    - { to: GATE }
+  GATE:
+    - { when: "default(outcome.kind, '') == 'escalation'", to: G1_WAIT }      # Leader nộp form thay cho decision
+    - { when: "default(outcome.kind, '') == 'blocked'", to: BLOCKED }
+    - { when: "default(decision.action, '') == 'close' and not decision.requires_human and not g1_required", to: DONE }
+    - { when: "default(decision.action, '') == 'close'", to: G1_WAIT }
+    - { when: "state.tier == 'T0' and default(evidence.verdict, '') == 'pass' and default(checklist.clean, true) and default(sec_report.verdict, 'pass') == 'pass' and confidence >= limits.conf_proceed", to: MERGE, rule_only: true }
+    - { when: "decision.action == 'merge' and not decision.requires_human and not g1_required", to: MERGE }   # g1_required = OR gates.g1.requires_human_when (decided by the harness, not trusted from the Leader)
+    - { when: "decision.action == 'merge'", to: G1_WAIT }
+    - { when: "decision.action == 'rework' and state.rework < limits.max_rework", to: IMPLEMENT, rework: "+1" }
+    - { when: "decision.action == 're_localize' and state.reloc < limits.max_reloc", to: LOCALIZE, reloc: "+1" }
+    - { when: "decision.action == 'escalate'", to: G1_WAIT }
+    - { when: "decision.action == 'supersede'", to: DONE }
+    - { to: BLOCKED }
+  G1_WAIT:
+    - { when: "gate.choice == 'approve' and default(decision.action, '') == 'close'", to: DONE }   # người đồng ý đóng, không merge
+    - { when: "gate.choice == 'approve' or default(gate.route, '') == 'merge'", to: MERGE }
+    - { when: "default(gate.route, '') == 'abort'", to: BLOCKED, final: true }
+    # escalation: option có route thì theo route; không có (continue) thì chạy lại stage đã hỏi
+    - { when: "default(gate.route, '') == 'rework' and state.rework < limits.max_rework", to: IMPLEMENT, rework: "+1" }
+    - { when: "default(gate.route, '') == 're_localize' and state.reloc < limits.max_reloc", to: LOCALIZE, reloc: "+1" }
+    - { when: "default(gate.route, '') == 're_spec'", to: SPEC, bump: { respec: "+1" } }
+    - { when: "default(gate.route, '') == 'continue' and gate.return_to == 'IMPLEMENT'", to: IMPLEMENT }
+    - { when: "default(gate.route, '') == 'continue' and gate.return_to == 'GATE'", to: GATE }
+    - { when: "default(gate.route, '') == 'continue' and gate.return_to == 'VERIFY'", to: VERIFY }
+    - { when: "default(gate.route, '') == 'continue' and gate.return_to == 'REVIEW'", to: REVIEW }
+    - { when: "gate.choice == 'reject' and state.rework < limits.max_rework", to: IMPLEMENT, rework: "+1" }
+    - { to: BLOCKED }
+  MERGE:
+    - { when: "default(merge.conflict, false) and state.rework < limits.max_rework", to: IMPLEMENT, rework: "+1", note: "base changed" }
+    - { when: "default(merge.conflict, false)", to: BLOCKED }
+    - { to: DONE }
+  ANSWER:                                                                  # type=question: Dev trả lời, không sửa code
+    - { when: "default(outcome.kind, '') == 'escalation'", to: G0_WAIT }
+    - { when: "default(outcome.kind, '') == 'blocked'", to: BLOCKED }      # gồm câu trả lời có chuỗi giống secret
+    - { to: DONE }
+
+# ───────────────────────────── Tool rules — first matching rule wins ─────────────────────────────
+tool_rules:
+  - { match: { tool: "git.push" },                                                         action: deny,  reason: "no agent may push" }
+  # exec.run / test.run: lệnh được kiểm ở Lớp 1 bằng command_guard (bên dưới), không dùng regex trên cả chuỗi
+  - { match: { tool: "fs.*", path_glob: "{.env,.env.*,.envrc,**/secrets/**,**/*.pem,**/*.key,**/*.pfx,**/*.p12,**/*.jks,**/id_rsa*,**/id_ed25519*,**/id_ecdsa*,**/id_dsa*,**/.ssh/**,**/.aws/**,**/.gnupg/**,**/.kube/**,**/.git-credentials,**/.netrc,**/.npmrc,**/.pypirc,**/credentials*.json,**/service-account*.json,**/*.tfstate,**/secrets.y*ml}" }, action: deny, reason: "secret files" }
+  - { match: { tool: "fs.*", path_glob: "{.git,.git/**,**/.git/**}" },                     action: deny,  reason: "git internals — dùng tool git.*" }
+  - { match: { tool: "fs.edit|fs.write", path_not_in: "spec.allowed_files" },              action: deny,  reason: "scope violation — outside spec.allowed_files. If the file is truly needed, write escalation.yaml whose recommended option has spec_patch.allowed_files_add (test files or files next to an allowed file are approved automatically)" }
+  - { match: { tool: "fs.edit|fs.write", path_in: "sensitive_paths", tier_below: T3 },     action: deny,  reason: "sensitive path requires T3" }
+  - { match: { tool: "fs.delete|fs.edit|fs.write", path_glob: "{.github/**,.gitlab-ci.yml,**/migrations/**,Dockerfile,docker-compose*.yml,requirements*.txt,package.json,go.mod,pom.xml}" }, action: ask, gate: G2, reason: "destructive" }
+  - { match: { tool: "test.run", role: verifier, cmd_not_in: ["spec.test_command", "spec.regression_command"] }, action: deny, reason: "Verifier may only run commands from the spec" }
+  - { match: { tool: "test.run", args_regex: "\\|\\|\\s*true|;\\s*exit\\s+0|--no-verify|PYTEST_ADDOPTS" }, action: deny, reason: "fake pass" }
+  - { match: { tool: "exec.run", role: verifier },  action: allow, constraint: { readonly_fs: true, network: false } }
+  - { match: { tool: "exec.run", role: security },  action: allow, constraint: { readonly_fs: true, network: false, cmd_prefix_in: ["semgrep", "bandit", "gitleaks", "pip-audit", "npm audit", "trivy"] } }
+  - { match: { tool: "user.ask", count_per_issue_gte: 3 }, action: deny, reason: "TOO_MANY_ASKS" }
+  - { match: { tool: "pkg.add" }, action: ask, gate: G2, reason: "dependency manifest change" }
+  - { match: { tool: "pkg.install", count_per_issue_gte: 6 }, action: deny, reason: "pkg.install limit for this issue reached" }
+  # tra cứu ngoài: trần mỗi issue (mỗi lần gọi vẫn qua policy.network ở lớp 1)
+  - { match: { tool: "web.search", count_per_issue_gte: 12 }, action: deny, reason: "web.search limit for this issue reached — decide with what you found" }
+  - { match: { tool: "web.fetch", count_per_issue_gte: 25 }, action: deny, reason: "web.fetch limit for this issue reached" }
+  - { match: { tool: "docs.lookup", count_per_issue_gte: 25 }, action: deny, reason: "docs.lookup limit for this issue reached" }
+  - { match: { tool: "llm.ask", count_per_issue_gte: 15 }, action: deny, reason: "llm.ask limit for this issue reached" }
+  - { action: ask }
+
+# ───────────────────────────── Command guard (Lớp 1 cho exec.run · test.run) ─────────────────────────────
+# Tách lệnh theo toán tử shell, bỏ lớp bọc (env, timeout, xargs…), xét chương trình đầu mỗi đoạn và đối số (policy/command.py).
+# LocalSandbox không chặn mạng hay ghi ngoài worktree, nên đây là lớp chặn chính khi chưa có Docker. Key nào bỏ trống
+# dùng mặc định trong config/models.py CommandGuardCfg.
+network:                         # web.* · docs.* — allowlist đầy đủ: config/models.py NetworkCfg (override cả list `allow` ở đây)
+  web_enabled: true
+  search_backends: [claude_cli, anthropic_api, brave]   # backend đầu dùng được: CLI subscription · ANTHROPIC_API_KEY · BRAVE_API_KEY
+  cache_ttl_h: 72
+  max_bytes: 2000000
+  pkg_min_age_days: 14           # pkg.*: bản phát hành mới hơn N ngày bị từ chối
+  pkg_checks: best_effort        # OSV/tuổi không kiểm được: best_effort = cài + cảnh báo · required = từ chối
+
+command_guard:
+  deny_bins: [curl, wget, nc, ncat, netcat, ssh, scp, sftp, ftp, telnet, rsync, invoke-webrequest, iwr, invoke-restmethod, irm,
+              bitsadmin, certutil, sudo, su, doas, runas, chown, chmod, icacls, takeown, reg, regedit, schtasks, sc, net, netsh,
+              setx, shutdown, reboot, kill, pkill, killall, taskkill, bash, sh, zsh, dash, fish, cmd, powershell, pwsh, wsl,
+              eval, source, ".", docker, podman, kubectl, helm, terraform, aws, gcloud, az,
+              apt, apt-get, yum, dnf, brew, choco, winget, scoop, pacman]
+  git_read_only: [status, diff, log, show, grep, ls-files, blame, rev-parse, describe, shortlog, branch]   # branch: chỉ liệt kê
+  module_deny: [pip, http.server, smtpd, ftplib, venv]          # python -m …
+  readonly_write_bins: [rm, rmdir, del, erase, rd, mv, move, ren, rename, cp, copy, xcopy, robocopy, touch, tee, truncate,
+                        mkdir, ln, dd, patch, install]          # thêm cho role chỉ đọc (Verifier)
+
+# ───────────────────────────── Isolation ─────────────────────────────
+exclusive_files: []              # ← onboarding copies from REPO.md#hot_files
+lock_lease_sec: 1800
+merge_serialize: true
+machine_gate_after_rebase: true
+
+# ───────────────────────────── Sandbox ─────────────────────────────
+sandbox:
+  kind: local                    # local | docker — local is NOT a real security boundary
+  image: "ddt-runner:latest"
+  network: none
+  network_allowlist: []
+  cpu: 2
+  memory: 4g
+  timeout_sec: 120
+  readonly_root: true
+  profiles:
+    dev:      { writable: ["$WORKTREE", "/tmp"] }
+    verifier: { writable: ["/tmp"] }
+    scan:     { writable: ["/tmp"], cmd_allowlist: ["semgrep", "bandit", "gitleaks", "pip-audit", "npm", "trivy", "detect-secrets", "diff-cover", "coverage"] }
+
+# ───────────────────────────── Condenser ─────────────────────────────
+condenser_defaults:
+  artifactize_threshold: 2000
+  evict_at: 0.80
+  compress_at: 0.90
+  keep_last_turns: 6
+  memory_block_tokens: 1200
+  fresh_window_max_per_issue: 1
+
+# ───────────────────────────── Delegation ─────────────────────────────
+delegation:
+  enabled: true
+  max_depth: 1
+  sub_budget_pct: 0.40
+  min_budget_remaining_pct: 0.60
+  max_retry_per_sub: 1
+  collect_timeout_pct: 0.70
+  sub_tools_never: [blackboard.write, "agent.*", user.ask, "memory.*", git.commit]
+  review_checklists: [_base/code, $project_type, $domain]
+  roles:
+    dev:      { max_subagents: 3 }
+    planner:  { max_subagents: 2 }
+    security: { max_subagents: 3 }
+
+# ───────────────────────────── Clarify ─────────────────────────────
+clarify:
+  enabled: true
+  max_per_issue_per_agent: 1
+  timeout_sec: 60
+  pairs:
+    dev: [analyst, planner]
+    planner: [intake]
+    security: [analyst]
+  answerer_model: sonnet
+
+# ───────────────────────────── Checklists ─────────────────────────────
+checklists:
+  enabled: true
+  max_items_per_brief: 30
+  machine_first: true
+  learned_max_active_per_repo: 30
+  learned_initial_conf: 0.5
+  learned_never_blocking: true
+
+# ───────────────────────────── Rituals ─────────────────────────────
+rituals:
+  retro_every: 10
+  retro_model: opus
+  peer_review_tiers: [T3]
+  onboard_block: true
+  handoff_field: true
+
+# ───────────────────────────── Canary ─────────────────────────────
+canary:
+  enabled: true
+  rate: 0.20
+  tiers: [T1, T2]
+  mutations: [flip_condition, off_by_one, remove_null_check, swap_return, delete_assert]
+  catch_rate_threshold: 0.70
+
+codegraph_impact_thresholds: { low: 3, medium: 8 }
+
+# Phase 11 (tắt mặc định): Intake tự tin < below_confidence → phân loại lần hai; type/tier/route lệch → giữ bản tier cao
+# hơn. Bật thì nới budgets.yaml#stages.TRIAGE wall (hai lượt Intake chung một hạn stage).
+intake_consistency:
+  enabled: false
+  below_confidence: 0.6
+
+# ───────────────────────────── Memory ─────────────────────────────
+# Fact/skill Learner tạo: quarantine → (quét qua) candidate → (≥ auto_promote_applied lần dùng, pass ≥ auto_promote_rate)
+# active → (confidence < conf_delete_below) retired. Người duyệt/gỡ trên dashboard hoặc `ddt skill`.
+memory:
+  promote_min_evidence: 2
+  promote_initial_conf: 0.5
+  conf_on_pass: 0.15
+  conf_on_fail: -0.30          # issue dùng nó bị BLOCKED / người bác
+  conf_on_soft_fail: -0.10     # issue xong nhưng role phải rework
+  conf_delete_below: 0.30
+  auto_promote_applied: 3
+  auto_promote_rate: 0.75
+  skill_max_tokens: 400
+  skills_per_brief: 3
+  candidates_per_brief: 1
+  episodes_per_brief: 3
+  learn_min_tool_calls: 25
+  learn_max_attempts: 2

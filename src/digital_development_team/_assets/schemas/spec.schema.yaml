@@ -1,0 +1,144 @@
+# spec.schema.yaml — output of the Analyst (Stage 3 SPEC)
+# This is the CONTRACT: Dev implements against it, Verifier grades against it, a human reads it in 15 seconds.
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "ddt/spec"
+title: Spec
+description: Machine-readable specification. "Relocate discipline upstream into specification precision."
+type: object
+additionalProperties: false
+required: [issue_id, goal, acceptance_criteria, allowed_files, rollback_plan]
+
+properties:
+  issue_id:
+    type: string
+    pattern: "^DDT-[0-9]{4,}$"
+    description: Internal issue id (DDT-nnnn), assigned by the Runner at Stage 0. Copy it from the brief.
+
+  goal:
+    type: string
+    maxLength: 300
+    description: One sentence. When is this issue done?
+
+  acceptance_criteria:
+    type: array
+    minItems: 1
+    maxItems: 8
+    description: |
+      Every AC must be CHECKABLE BY MACHINE or by reading the diff.
+      The Verifier grades each AC separately with an enum result. No ACs like "code is clean".
+    items:
+      type: object
+      required: [id, text, verify_by]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: "^AC[0-9]+$"
+          description: Sequential id AC1, AC2, ... Referenced by evidence.criteria[].id.
+        text:
+          type: string
+          maxLength: 300
+          description: The observable behaviour or diff property that must hold.
+        verify_by:
+          type: string
+          enum: [test, lint, typecheck, diff_inspection, manual]
+          description: How the Verifier checks it. manual → Verifier returns unclear and a human decides.
+        test_ref:
+          type: string
+          description: Exact test id (e.g. tests/test_x.py::test_y) when verify_by=test.
+        mvs_ids:
+          type: array
+          uniqueItems: true
+          items: { type: string }
+          description: IDs copied exactly from match.mvs; every MVS must map to a tested AC.
+        test_command:
+          type: string
+          minLength: 1
+          description: Command executing this AC's MVS test(s). The harness runs it on the final commit.
+
+  allowed_files:
+    type: array
+    minItems: 1
+    maxItems: 20
+    items: { type: string }
+    description: |
+      ALLOWLIST. If Dev touches a file outside this list the policy engine HARD-BLOCKS it, no questions asked.
+      Derived from plan.candidates plus the corresponding test file(s).
+
+  forbidden_files:
+    type: array
+    items: { type: string }
+    description: Extra forbidden paths beyond sensitive_paths.yaml, if needed.
+
+  test_command:
+    type: string
+    description: The EXACT command the Verifier runs. Must already work (proven at onboarding or confirmed by the Analyst). Required unless the task profile says optional (docs, config, chore).
+
+  regression_command:
+    type: string
+    description: Command that runs the existing tests to make sure nothing broke. Defaults to the whole suite if it runs in < 5 minutes.
+
+  rollback_plan:
+    type: string
+    maxLength: 200
+    description: One line. Usually "git revert <sha>" or "disable flag X".
+
+  out_of_scope:
+    type: array
+    items: { type: string }
+    description: What is DELIBERATELY not done — keeps the Dev from over-delivering.
+
+  ambiguities:
+    type: array
+    items:
+      type: object
+      required: [question, assumed]
+      properties:
+        question: { type: string, description: "The open question" }
+        assumed: { type: string, description: "What the Analyst assumed in order to proceed" }
+    description: |
+      Non-empty AND intake.confidence < 0.7 → G0.
+      Non-empty but confidence high → record the assumption and proceed; the Leader sees it at the gate.
+
+  amendments:
+    type: array
+    description: Written by the harness when the spec is amended after SPEC (escalation spec_patch). Do not write it.
+    items:
+      type: object
+      required: [by, at]
+      properties:
+        by: { type: string }
+        at: { type: string }
+        reason: { type: string, maxLength: 300 }
+        allowed_files_add: { type: array, items: { type: string } }
+        test_command: { type: string }
+        regression_command: { type: string }
+
+  estimated_tier:
+    type: string
+    enum: [T0, T1, T2, T3]
+    description: Analyst's re-estimate of the risk tier after reading the code. Policy takes MAX(intake.risk_tier, estimated_tier).
+
+# ---------------------------------------------------------------
+# examples:
+# - issue_id: DDT-0042
+#   goal: "GET /api/users/{id} returns 404 with the standard body when the id does not exist, instead of 500"
+#   acceptance_criteria:
+#     - id: AC1
+#       text: "GET /api/users/99999 returns status 404"
+#       verify_by: test
+#       test_ref: tests/test_users.py::test_user_not_found
+#     - id: AC2
+#       text: "The 404 body has the shape {\"error\": \"user_not_found\", \"id\": 99999}"
+#       verify_by: test
+#       test_ref: tests/test_users.py::test_user_not_found_body
+#     - id: AC3
+#       text: "No other handler in users.py is touched"
+#       verify_by: diff_inspection
+#   allowed_files: [src/api/users.py, tests/test_users.py]
+#   test_command: "pytest tests/test_users.py -q"
+#   regression_command: "pytest tests/ -q --timeout=240"
+#   rollback_plan: "git revert HEAD"
+#   out_of_scope: ["Standardizing the error format across the whole API — separate issue"]
+#   ambiguities: []
+#   estimated_tier: T1

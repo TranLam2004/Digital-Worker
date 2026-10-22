@@ -1,0 +1,19 @@
+# llm.ask — one call without tools: quick general knowledge (cheap model) or a second opinion when stuck (stronger model).
+namespace: llm
+sandbox: false
+artifactize: false
+ops:
+  - name: ask
+    risk_tier: read
+    allowed_roles: [dev, planner, analyst, security, leader]
+    timeout_sec: 120
+    description: "Ask one focused question without tools (it sees neither the repo nor the blackboard; pass what it needs in `context`). mode=quick (default, cheap model, ≤5 per stage): regex, idiom, command syntax, API usage. mode=second_opinion (stronger model, 1 per stage): after a failed attempt, describe what you tried and why it failed to get the likely wrong assumption and a different approach. Returns answer. Errors: LIMIT, PROVIDER_ERROR."
+    input_schema:
+      type: object
+      properties:
+        question: { type: string, minLength: 5 }
+        context: { type: string }
+        mode: { type: string, enum: [quick, second_opinion] }
+        max_tokens: { type: integer, minimum: 50, maximum: 1000 }
+      required: [question]
+      additionalProperties: false

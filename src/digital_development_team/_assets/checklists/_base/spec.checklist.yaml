@@ -1,0 +1,90 @@
+# _base/spec — Analyst self-check before writing spec.yaml. 9 items. The harness re-runs the machine-verifiable part.
+# Differs from schema validation: the schema checks STRUCTURE, this checklist checks QUALITY.
+meta:
+  name: spec-base
+  source: base
+  applies_to_default: [spec]
+  version: 1
+  owner: P2
+
+items:
+  - id: SPEC-001
+    text: "Every AC describes observable behaviour, not implementation ('returns 404' ✓, 'catches the exception' ✗)"
+    rationale: "Prevents the Verifier from grading how the code was written instead of what it does, which makes the verdict meaningless."
+    verify: llm
+    severity: major
+    applies_to: [spec]
+    enabled: true
+
+  - id: SPEC-002
+    text: "No AC contains a vague qualifier (đúng, tốt, sạch, hợp lý, phù hợp, xử lý đúng, đầy đủ, properly, correctly, clean, appropriate, robust)"
+    rationale: "Prevents an unverifiable AC, which forces the Verifier to return 'unclear' instead of a pass/fail verdict."
+    verify: regex
+    pattern: "\\b(đúng cách|tốt hơn|sạch|hợp lý|phù hợp|xử lý đúng|đầy đủ|properly|correctly|clean|appropriate|robust)\\b"
+    pattern_scope: file_content
+    severity: major
+    applies_to: [spec]
+    enabled: true
+
+  - id: SPEC-003
+    text: "For a bug, at least one AC has verify_by: test with a concrete test_ref"
+    rationale: "Prevents a bug fix without a reproducing test, which leaves the Verifier inconclusive and the fix unproven."
+    verify: test
+    test_ref: "count(ac.verify_by == 'test' and ac.test_ref) >= 1"
+    severity: blocking
+    applies_to: [spec]
+    applies_when: "intake.type == 'bug'"
+    enabled: true
+
+  - id: SPEC-004
+    text: "allowed_files contains the test file matching each source file (src/x.py → tests/test_x.py, or a note 'create new')"
+    rationale: "Prevents the Dev being tool_denied when writing tests, which wastes a full rework cycle. This is the Analyst's most common mistake."
+    verify: llm
+    severity: blocking
+    applies_to: [spec]
+    enabled: true
+
+  - id: SPEC-005
+    text: "test_command is listed in REPO.md#commands, or the test file referenced in the command exists"
+    rationale: "Prevents a wrong test command, which means the Verifier cannot run anything and the pipeline produces no evidence."
+    verify: test
+    test_ref: "test_command in repo.commands or fs.exists(extract_path(test_command))"
+    severity: blocking
+    applies_to: [spec]
+    enabled: true
+
+  - id: SPEC-006
+    text: "At most 8 ACs; more than 8 requires estimated_tier ≥ T2 plus an ambiguity 'should be split'"
+    rationale: "Prevents an oversized issue from being treated as routine; too many ACs signal work that should be split."
+    verify: test
+    test_ref: "len(acceptance_criteria) <= 8 or estimated_tier in ['T2','T3']"
+    severity: major
+    applies_to: [spec]
+    enabled: true
+
+  - id: SPEC-007
+    text: "When callers_affected is non-empty, there is a regression AC for the callers (verify_by test, test_ref = the caller's test)"
+    rationale: "Prevents a signature change without a caller AC; the regression is still caught, but only after a wasted rework cycle."
+    verify: llm
+    severity: major
+    applies_to: [spec]
+    applies_when: "plan.candidates[0].callers_affected.length > 0"
+    enabled: true
+
+  - id: SPEC-008
+    text: "Every ambiguity has a non-empty assumed value"
+    rationale: "Prevents an open question with no chosen default, which forces the Dev to guess and implement the wrong behaviour."
+    verify: test
+    test_ref: "all(a.assumed for a in ambiguities)"
+    severity: major
+    applies_to: [spec]
+    enabled: true
+
+  - id: SPEC-009
+    text: "For a security incident, AC1 is a PoC test (FAIL before / PASS after) and AC2 covers the variants"
+    rationale: "Prevents closing an incident without evidence; with no PoC there is no proof the vulnerability was actually fixed."
+    verify: llm
+    severity: blocking
+    applies_to: [spec]
+    applies_when: "intake.type == 'security_incident'"
+    enabled: true

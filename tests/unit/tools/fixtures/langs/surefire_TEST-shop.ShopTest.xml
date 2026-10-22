@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="shop.ShopTest" time="0.06" tests="4" errors="0" skipped="0" failures="1" flakes="0">
+  
+  <testcase name="reserveOverStock" classname="shop.ShopTest" time="0.032">
+    <failure message="Expected shop.InsufficientStock to be thrown, but nothing was thrown." type="org.opentest4j.AssertionFailedError"><![CDATA[org.opentest4j.AssertionFailedError: Expected shop.InsufficientStock to be thrown, but nothing was thrown.
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:152)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:73)
+	at org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:35)
+	at org.junit.jupiter.api.Assertions.assertThrows(Assertions.java:3115)
+	at shop.ShopTest.reserveOverStock(ShopTest.java:32)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+]]></failure>
+  </testcase>
+  <testcase name="restockAndAvailable" classname="shop.ShopTest" time="0.0"/>
+  <testcase name="withTax" classname="shop.ShopTest" time="0.0"/>
+  <testcase name="reserveWithinStock" classname="shop.ShopTest" time="0.008"/>
+</testsuite>

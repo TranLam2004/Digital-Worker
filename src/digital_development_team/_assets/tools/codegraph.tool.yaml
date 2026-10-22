@@ -1,0 +1,70 @@
+# codegraph.* — AST knowledge graph via the CodeGraph CLI (npm @colbymchenry/codegraph, MIT, tree-sitter, ~20 languages).
+# The index lives in the MAIN repo (<repo>/.codegraph/, excluded via .git/info/exclude): `ddt debug codegraph-init` · synced after MERGE.
+# Called from a worktree (IMPLEMENT/VERIFY) → the result also carries stale_files = files changed in the patch that the index has not seen.
+# Errors: NOT_AVAILABLE · NOT_INDEXED · SYMBOL_NOT_FOUND · AMBIGUOUS — the hint always points to fs.search. The Verifier has NO codegraph (independence).
+namespace: codegraph
+sandbox: true
+artifactize: true
+backend: cli://codegraph
+ops:
+  - name: search
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev, security]
+    timeout_sec: 15
+    description: "Fuzzy-search symbols by name. Optional `kind` filter: function|method|class|variable; `limit` defaults to 10. Returns symbols[{name, kind, path, line, end_line, signature, qualified_name, score}] and count. Errors: SYMBOL_NOT_FOUND, NOT_INDEXED, NOT_AVAILABLE — fall back to fs.search. Called from a worktree, the result may add stale: true + stale_files (re-check those with fs.read)."
+    input_schema:
+      type: object
+      properties:
+        query: { type: string }
+        kind: { type: string }
+        limit: { type: integer, minimum: 1, maximum: 50 }
+      required: [query]
+      additionalProperties: false
+  - name: callers
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev, security]
+    timeout_sec: 15
+    description: "Find what calls `symbol` (exact name); `limit` defaults to 20. Returns callers[{name, kind, path, line}], count, files (distinct paths) and test_count (callers located in test files). Error: SYMBOL_NOT_FOUND — use fs.search. Called from a worktree, the result may add stale: true + stale_files."
+    input_schema:
+      type: object
+      properties:
+        symbol: { type: string }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+      required: [symbol]
+      additionalProperties: false
+  - name: callees
+    risk_tier: read
+    allowed_roles: [planner]
+    timeout_sec: 15
+    description: "Find what `symbol` calls (exact name); `limit` defaults to 20. Returns callees[{name, kind, path, line}], count, files (distinct paths) and test_count. Error: SYMBOL_NOT_FOUND — use fs.search."
+    input_schema:
+      type: object
+      properties:
+        symbol: { type: string }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+      required: [symbol]
+      additionalProperties: false
+  - name: impact
+    risk_tier: read
+    allowed_roles: [planner, analyst]
+    timeout_sec: 20
+    description: "What breaks if `symbol` changes: follows dependents up to `depth` (default 2). Returns affected_symbols, affected_files, affected_tests and risk low/medium/high (low <3 files, medium 3–8, high >8 or public API). Error: SYMBOL_NOT_FOUND — use fs.search."
+    input_schema:
+      type: object
+      properties:
+        symbol: { type: string }
+        depth: { type: integer, minimum: 1, maximum: 5 }
+      required: [symbol]
+      additionalProperties: false
+  - name: node
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev, security]
+    timeout_sec: 10
+    description: "Source and signature of a symbol with this exact name: name, kind, path, line, end_line, signature, source (≤120 lines). Several symbols share the name → AMBIGUOUS with candidates[{path, line, kind}]; pass `path` to pick one. Error: SYMBOL_NOT_FOUND — use fs.search."
+    input_schema:
+      type: object
+      properties:
+        symbol: { type: string }
+        path: { type: string }
+      required: [symbol]
+      additionalProperties: false

@@ -1,0 +1,30 @@
+# security.* — security scanners run in a sandbox with READ-ONLY access to the worktree (output goes to scratch/TEMP, never into the worktree).
+# Pure-Python backends that run on Windows: bandit (Python SAST) · pip-audit (dependency CVEs) · detect-secrets (secrets in files).
+# Missing binary → that part reports `status: skipped` + a hint; the tool does not fail. Same parser as the `sast` slot of MACHINE_GATE
+# (tools/quality), so Security and the harness see the same numbers.
+namespace: security
+sandbox: true
+artifactize: true
+ops:
+  - name: scan
+    risk_tier: read                 # only reads the worktree → the read-only role (security) may call it via policy layer 3
+    allowed_roles: [security, runner]
+    timeout_sec: 180
+    sandbox_profile: verifier
+    description: >-
+      Security scan of the changed files (default) or `paths`. targets: sast (bandit, .py files) · secrets (detect-secrets) ·
+      deps (pip-audit on requirements*.txt in the diff — needs network). Returns counts by severity, top findings
+      (file:line, secrets never printed) and a full-output artifact; missing scanner → skipped.
+      Fill sast_clean / dependency_scan_clean / no_secret_in_code in sec_report.json.
+    input_schema:
+      type: object
+      properties:
+        targets:
+          type: array
+          items: { type: string, enum: [sast, secrets, deps] }
+          description: "Default [sast, secrets]. Add deps only when the diff touches a dependency file or it is explicitly requested."
+        paths:
+          type: array
+          items: { type: string }
+          description: "Files/directories relative to the worktree. Default: files in the diff against base."
+      additionalProperties: false

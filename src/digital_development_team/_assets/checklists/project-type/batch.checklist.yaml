@@ -1,0 +1,62 @@
+# project-type/batch — applies when REPO.md.project_type == batch (ETL, job, cron, worker). 6 items.
+meta:
+  name: batch
+  source: project-type
+  applies_to_default: [patch]
+  version: 1
+  owner: P3
+  applies_when_repo: "project_type == 'batch'"
+
+items:
+  - id: BATCH-001
+    text: "Every new job or step is idempotent — re-running it does not duplicate data (upsert, dedupe key, or check-before-insert)"
+    rationale: "Prevents a retry after a crash from creating duplicate records."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: BATCH-002
+    text: "Partial failure is handled — one bad record does not stop the batch; errors are logged, counted and written to a dead-letter store"
+    rationale: "Prevents a single corrupt row from discarding an entire day's run."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    enabled: true
+
+  - id: BATCH-003
+    text: "The whole dataset is never loaded into memory — large queries use an iterator/chunk/cursor (no unbounded .all(), fetchall(), readlines())"
+    rationale: "Prevents an out-of-memory crash when the dataset grows beyond what fits in RAM."
+    verify: regex
+    pattern: "^\\+.*\\.(all\\(\\)|fetchall\\(\\)|readlines\\(\\)|toArray\\(\\)|collect\\(\\))(?!.*limit)"
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    enabled: true
+
+  - id: BATCH-004
+    text: "A job that runs longer than 5 minutes writes a checkpoint or progress marker — it can resume from the middle, not from the start"
+    rationale: "Prevents a crash at minute 55 from forcing the job to restart from zero."
+    verify: llm
+    severity: major
+    applies_to: [patch]
+    applies_when: "spec.goal.contains('job') or spec.goal.contains('batch') or spec.goal.contains('import')"
+    enabled: true
+
+  - id: BATCH-005
+    text: "Every external call (DB, API, remote file) has a timeout and a retry policy — no call without a timeout"
+    rationale: "Prevents a hung connection from blocking the job indefinitely."
+    verify: regex
+    pattern: "^\\+.*(requests\\.(get|post|put)\\(|urlopen\\(|\\.connect\\(|fetch\\()(?!.*timeout)"
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    enabled: true
+
+  - id: BATCH-006
+    text: "Logs include a correlation id / batch id and record counts at start and end — no silent runs"
+    rationale: "Prevents being unable to debug a failure three days later because the run left no trace."
+    verify: diff_inspection
+    severity: minor
+    applies_to: [patch]
+    enabled: true

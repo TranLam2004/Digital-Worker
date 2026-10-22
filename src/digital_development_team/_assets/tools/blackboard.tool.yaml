@@ -1,0 +1,36 @@
+# blackboard.* — the only communication channel between agents. Access follows the reads[]/writes[] frontmatter — enforced here.
+namespace: blackboard
+sandbox: false
+artifactize: false
+ops:
+  - name: read
+    risk_tier: read
+    allowed_roles: [all]
+    timeout_sec: 5
+    description: "Read an upstream artifact slot of the current issue (latest version unless `version` is set); `field` returns only that top-level field. Only slots in your reads[] (otherwise denied: slot_acl). Returns slot, version, sha256, written_by, written_at, content. Error: NOT_FOUND (missing slot, or missing field — the hint lists the available fields)."
+    input_schema:
+      type: object
+      properties:
+        slot: { type: string }
+        version: { type: integer, minimum: 1 }
+        field: { type: string }
+      required: [slot]
+      additionalProperties: false
+  - name: write
+    risk_tier: soft_write
+    allowed_roles: [all]
+    timeout_sec: 5
+    description: "Write your artifact to `slot` as a JSON object validated against the slot schema (≤3 attempts per slot). For patch/ send only impl_log (+handoff) — the harness takes the diff from git. Returns slot, version, sha256, path. Errors: SCHEMA (details list the bad fields — fix them and write again), TOO_MANY_ATTEMPTS (stop and return blocked), slot_acl (slot not in your writes[])."
+    input_schema:
+      type: object
+      properties:
+        slot: { type: string }
+        content: { type: object }
+      required: [slot, content]
+      additionalProperties: false
+  - name: list
+    risk_tier: read
+    allowed_roles: [all]
+    timeout_sec: 5
+    description: "List the slots already written for the current issue, each with slot, version and sha."
+    input_schema: { type: object, properties: {}, additionalProperties: false }

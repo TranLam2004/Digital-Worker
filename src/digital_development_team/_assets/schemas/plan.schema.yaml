@@ -1,0 +1,166 @@
+# plan.schema.yaml — output of the Planner (Stage 2 LOCALIZE + plan)
+# The Planner answers WHERE to change and in WHAT ORDER. It does not answer HOW to change (that is the Dev's job).
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "ddt/plan"
+title: Plan
+description: Localization result (ranked top-3 candidates) plus an execution plan and a rollback. Produced by the Planner after reading the repo.
+type: object
+additionalProperties: false
+required: [issue_id, candidates, steps, rollback, localize_method]
+
+properties:
+  issue_id:
+    type: string
+    pattern: "^DDT-[0-9]{4,}$"
+    description: Internal issue id (DDT-nnnn), assigned by the Runner at Stage 0. Copy it from the brief.
+
+  localize_method:
+    type: array
+    items:
+      type: string
+      enum: [ripgrep, skeleton, full_read, codegraph, episodic_hint, fast_path]
+    description: Localization steps actually used, in order. Lets the audit see how much localization cost.
+
+  candidates:
+    type: array
+    minItems: 1
+    maxItems: 3
+    description: |
+      RANKED TOP-3 candidate locations, NOT a single answer.
+      Dev works on #1. On the third rework the harness re-localizes using #2.
+    items:
+      type: object
+      required: [rank, files, confidence, reason]
+      additionalProperties: false
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+          maximum: 3
+          description: 1 = most likely location.
+        files:
+          type: array
+          minItems: 1
+          description: Files that make up this candidate, each with the symbols/lines involved when known.
+          items:
+            type: object
+            required: [path]
+            properties:
+              path: { type: string, description: "Repo-relative file path" }
+              symbols:
+                type: array
+                items: { type: string }
+                description: Specific functions/classes, when identified.
+              lines:
+                type: string
+                pattern: "^[0-9]+-[0-9]+$"
+                description: Line range, e.g. "42-58".
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Planner's confidence that the fix belongs here, 0..1.
+        reason:
+          type: string
+          maxLength: 200
+          description: Evidence for this candidate (stack trace line, grep hit, call path).
+        callers_affected:
+          type: array
+          items: { type: string }
+          description: From codegraph — call sites that reach these symbols; Dev must not break them.
+
+  steps:
+    type: array
+    minItems: 1
+    maxItems: 10
+    description: Milestones for the Dev. Each step has a target that can be checked.
+    items:
+      type: object
+      required: [order, action, target]
+      properties:
+        order: { type: integer, minimum: 1 }
+        action:
+          type: string
+          enum: [write_failing_test, modify, add, delete, refactor, run_test, verify_regression]
+          description: write_failing_test first; modify/add/delete/refactor the code; run_test; verify_regression last. A delete step makes the issue T3.
+        target: { type: string, description: "File, symbol or command this step acts on" }
+        note: { type: string, maxLength: 200 }
+
+  hot_files_touched:
+    type: array
+    items: { type: string }
+    description: Files that are in the top-5 hot files from onboarding → the harness takes an exclusive lock.
+
+  rollback:
+    type: string
+    maxLength: 200
+    description: One-line rollback, e.g. "git revert HEAD".
+
+  estimated_complexity:
+    type: string
+    enum: [trivial, small, medium, large]
+    description: Planner's re-estimate of complexity after reading the code.
+
+  subtasks:
+    type: array
+    minItems: 2
+    maxItems: 5
+    description: |
+      ONLY when the issue is too large for one change (needs more than ~6 files, or has parts that can ship separately).
+      Each part becomes its own issue, done in order; this issue then closes. Leave it out otherwise.
+    items:
+      type: object
+      additionalProperties: false
+      required: [title, description, files]
+      properties:
+        title: { type: string, maxLength: 100 }
+        description: { type: string, minLength: 20, maxLength: 1000, description: "What this part must achieve, testable on its own." }
+        files: { type: array, maxItems: 8, items: { type: string }, description: "Files this part is expected to touch." }
+        depends_on: { type: array, items: { type: integer, minimum: 1, maximum: 4 }, description: "1-based numbers of EARLIER parts that must be done first." }
+
+  needs_containment:
+    type: boolean
+    default: false
+    description: security_incident only — whether a temporary containment measure is needed BEFORE the fix.
+
+  containment_proposal:
+    type: string
+    description: If needs_containment — the concrete measure (disable endpoint, revoke token, rate limit, ...).
+
+# ---------------------------------------------------------------
+# examples:
+# - issue_id: DDT-0042
+#   localize_method: [ripgrep, skeleton, full_read, codegraph]
+#   candidates:
+#     - rank: 1
+#       files:
+#         - path: src/api/users.py
+#           symbols: [get_user]
+#           lines: "42-58"
+#       confidence: 0.88
+#       reason: "Stack trace points straight at get_user; no try/except around db.get()"
+#       callers_affected: [src/api/router.py::register_routes]
+#     - rank: 2
+#       files:
+#         - path: src/db/repository.py
+#           symbols: [UserRepository.get]
+#       confidence: 0.35
+#       reason: "Could be fixed at the repository layer by returning Optional instead of raising"
+#   steps:
+#     - order: 1
+#       action: write_failing_test
+#       target: tests/test_users.py::test_user_not_found
+#     - order: 2
+#       action: modify
+#       target: src/api/users.py::get_user
+#       note: "Catch UserNotFound → return a 404 JSON body"
+#     - order: 3
+#       action: run_test
+#       target: "pytest tests/test_users.py -q"
+#     - order: 4
+#       action: verify_regression
+#       target: "pytest tests/ -q"
+#   hot_files_touched: []
+#   rollback: "git revert HEAD"
+#   estimated_complexity: small
+#   needs_containment: false

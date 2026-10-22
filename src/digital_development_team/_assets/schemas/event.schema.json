@@ -1,0 +1,385 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ddt/event",
+  "title": "Event",
+  "description": "One line of events.jsonl, the append-only audit log. Written exclusively by the harness. The dashboard is only a viewer of this file — if the dashboard breaks no data is lost. Every outward action leaves a record: who requested it, the input, the approval path, the output, timestamp and hash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ts",
+    "seq",
+    "issue_id",
+    "actor",
+    "event"
+  ],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonically increasing sequence number within one issue, starting at 0. Replay orders by seq, not by ts."
+    },
+    "issue_id": {
+      "type": "string",
+      "description": "DDT-nnnn, or 'global' for system-wide events that belong to no issue.",
+      "pattern": "^(DDT-[0-9]{4,}|global)$"
+    },
+    "actor": {
+      "type": "string",
+      "description": "Who produced the event: intake | analyst | planner | dev | verifier | security | leader | learner | runner | human:P1 | human:P2 | human:P3"
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "ingested",
+        "stage_enter",
+        "stage_exit",
+        "llm_call",
+        "tool_call",
+        "tool_denied",
+        "slot_written",
+        "slot_rejected",
+        "slot_versioned",
+        "spec_amended",
+        "recovery",
+        "reopened",
+        "gate_wait",
+        "gate_resolved",
+        "gate_timeout",
+        "escalation_raised",
+        "rework",
+        "re_localize",
+        "blocked",
+        "budget_warning",
+        "circuit_breaker",
+        "lock_acquired",
+        "lock_blocked",
+        "lock_released",
+        "lock_expired",
+        "worktree_created",
+        "worktree_removed",
+        "merged",
+        "merge_conflict",
+        "canary_injected",
+        "canary_result",
+        "subagent_spawned",
+        "subagent_done",
+        "subagent_reviewed",
+        "subagent_stopped",
+        "clarify_asked",
+        "clarify_answered",
+        "checklist_run",
+        "checklist_learned",
+        "checklist_demoted",
+        "retro_generated",
+        "peer_review_disagree",
+        "memory_write",
+        "memory_promote",
+        "memory_demote",
+        "learn_run",
+        "stuck_detected",
+        "context_condensed",
+        "issue_split",
+        "human_override",
+        "stop_requested",
+        "resumed",
+        "issue_done",
+        "issue_superseded",
+        "config_reloaded",
+        "config_error",
+        "match_item",
+        "match_started",
+        "match_submitted",
+        "match_graded"
+      ]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "INGEST",
+        "TRIAGE",
+        "G0_WAIT",
+        "LOCALIZE",
+        "SPLIT",
+        "SPEC",
+        "IMPLEMENT",
+        "MACHINE_GATE",
+        "VERIFY",
+        "REVIEW",
+        "GATE",
+        "G1_WAIT",
+        "MERGE",
+        "ANSWER",
+        "DONE",
+        "BLOCKED"
+      ],
+      "description": "State-machine state at the time of the event, including wait and terminal states. Kept in sync with core.enums.Stage (contract test)."
+    },
+    "data": {
+      "type": "object",
+      "description": "Event-type-specific payload. Do not embed large artifacts here — use artifact_ref.",
+      "additionalProperties": true
+    },
+    "llm": {
+      "type": "object",
+      "description": "Only for event=llm_call: model, token counts, latency and cost of the call.",
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "tokens_in": {
+          "type": "integer"
+        },
+        "tokens_out": {
+          "type": "integer"
+        },
+        "tokens_cached": {
+          "type": "integer"
+        },
+        "latency_ms": {
+          "type": "integer"
+        },
+        "cost_usd": {
+          "type": "number"
+        },
+        "prompt_hash": {
+          "type": "string",
+          "description": "sha256 of the prompt, for de-duplication and prompt-cache debugging."
+        },
+        "transport": {
+          "type": "string",
+          "enum": [
+            "api",
+            "cli"
+          ],
+          "description": "api: SDK (anthropic/openai…) — the harness runs the agent loop. cli: Claude Code headless — the loop runs inside the adapter, tools go through the DDT MCP server, cost_usd=0."
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "description": "Only for event=tool_call | tool_denied: which tool, its risk tier, who approved it and the outcome.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Tool name, e.g. fs.edit, exec.run, ..."
+        },
+        "risk_tier": {
+          "type": "string",
+          "enum": [
+            "read",
+            "soft_write",
+            "hard_write",
+            "destructive"
+          ]
+        },
+        "approved_by": {
+          "type": "string",
+          "enum": [
+            "policy",
+            "hook",
+            "human",
+            "session_memory"
+          ]
+        },
+        "denied_reason": {
+          "type": "string"
+        },
+        "args_hash": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error",
+            "denied"
+          ]
+        }
+      }
+    },
+    "artifact_ref": {
+      "type": "string",
+      "description": "Reference to a large output stored elsewhere, e.g. blackboard://DDT-0042/evidence.json or artifact://..."
+    },
+    "hash": {
+      "type": "string",
+      "description": "sha256 of the referenced artifact, if any. Provenance."
+    },
+    "human": {
+      "type": "object",
+      "description": "Only for event=gate_resolved | human_override: who decided, at which gate, what they chose and how long they waited.",
+      "properties": {
+        "who": {
+          "type": "string"
+        },
+        "gate": {
+          "type": "string"
+        },
+        "choice": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "wait_sec": {
+          "type": "integer"
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "description": "Budget snapshot at the time of the event. The dashboard draws its charts from these values.",
+      "properties": {
+        "tokens_used": {
+          "type": "integer"
+        },
+        "tokens_max": {
+          "type": "integer"
+        },
+        "turns_used": {
+          "type": "integer"
+        },
+        "turns_max": {
+          "type": "integer"
+        },
+        "wall_sec": {
+          "type": "integer"
+        },
+        "wall_max_sec": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "ts": "2026-10-03T09:14:03Z",
+      "seq": 0,
+      "issue_id": "DDT-0042",
+      "actor": "runner",
+      "event": "ingested",
+      "data": {
+        "source": "github",
+        "source_id": "owner/repo#123"
+      }
+    },
+    {
+      "ts": "2026-10-03T09:14:04Z",
+      "seq": 1,
+      "issue_id": "DDT-0042",
+      "actor": "runner",
+      "event": "stage_enter",
+      "stage": "TRIAGE"
+    },
+    {
+      "ts": "2026-10-03T09:14:21Z",
+      "seq": 2,
+      "issue_id": "DDT-0042",
+      "actor": "intake",
+      "event": "llm_call",
+      "stage": "TRIAGE",
+      "llm": {
+        "model": "claude-haiku-4-5",
+        "tokens_in": 2140,
+        "tokens_out": 310,
+        "tokens_cached": 1800,
+        "latency_ms": 1820,
+        "cost_usd": 0.0012,
+        "prompt_hash": "sha256:a1b2..."
+      }
+    },
+    {
+      "ts": "2026-10-03T09:14:22Z",
+      "seq": 3,
+      "issue_id": "DDT-0042",
+      "actor": "intake",
+      "event": "slot_written",
+      "stage": "TRIAGE",
+      "artifact_ref": "blackboard://DDT-0042/intake.yaml",
+      "hash": "sha256:c3d4..."
+    },
+    {
+      "ts": "2026-10-03T09:19:40Z",
+      "seq": 17,
+      "issue_id": "DDT-0042",
+      "actor": "dev",
+      "event": "tool_call",
+      "stage": "IMPLEMENT",
+      "tool": {
+        "name": "fs.edit",
+        "risk_tier": "soft_write",
+        "approved_by": "policy",
+        "args_hash": "sha256:e5f6...",
+        "duration_ms": 12,
+        "status": "ok"
+      },
+      "budget": {
+        "tokens_used": 31200,
+        "tokens_max": 150000,
+        "turns_used": 7,
+        "turns_max": 25,
+        "wall_sec": 210,
+        "wall_max_sec": 720
+      }
+    },
+    {
+      "ts": "2026-10-03T09:19:55Z",
+      "seq": 18,
+      "issue_id": "DDT-0042",
+      "actor": "dev",
+      "event": "tool_denied",
+      "stage": "IMPLEMENT",
+      "tool": {
+        "name": "fs.edit",
+        "risk_tier": "soft_write",
+        "denied_reason": "path src/config/settings.py not in spec.allowed_files",
+        "status": "denied"
+      }
+    },
+    {
+      "ts": "2026-10-03T09:25:10Z",
+      "seq": 31,
+      "issue_id": "DDT-0042",
+      "actor": "runner",
+      "event": "gate_wait",
+      "stage": "GATE",
+      "data": {
+        "gate": "G1",
+        "tier": "T2",
+        "timeout_sec": 300
+      }
+    },
+    {
+      "ts": "2026-10-03T09:25:38Z",
+      "seq": 32,
+      "issue_id": "DDT-0042",
+      "actor": "human:P1",
+      "event": "gate_resolved",
+      "stage": "GATE",
+      "human": {
+        "who": "P1",
+        "gate": "G1",
+        "choice": "approve",
+        "wait_sec": 28
+      }
+    },
+    {
+      "ts": "2026-10-03T09:25:41Z",
+      "seq": 33,
+      "issue_id": "DDT-0042",
+      "actor": "runner",
+      "event": "merged",
+      "data": {
+        "sha": "9f8e7d6",
+        "branch": "ddt/DDT-0042"
+      }
+    }
+  ]
+}

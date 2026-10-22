@@ -1,0 +1,86 @@
+# domain/banking — applies when REPO.md.domain == banking. 8 items. Stricter than ecommerce.
+meta:
+  name: banking
+  source: domain
+  applies_to_default: [patch, spec]
+  version: 1
+  owner: P2
+  applies_when_repo: "domain == 'banking'"
+  glossary_ref: ../../50-knowledge/_template.DOMAIN.md
+  min_tier_override: T2            # every patch in the banking domain is at least T2
+
+items:
+  - id: BANK-001
+    text: "Every change to a balance or transaction writes an immutable audit log entry (who, what, when, before, after) — no UPDATE without a log"
+    rationale: "Prevents a regulatory breach: an unaudited balance change cannot be reconstructed or defended in an audit."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/account*/**','**/transaction*/**','**/ledger*/**','**/balance*/**'])"
+    enabled: true
+
+  - id: BANK-002
+    text: "Money is represented as Decimal/BigDecimal or integer minor units — never float/double or parseFloat"
+    rationale: "Prevents rounding errors in monetary arithmetic; being off by one cent is a production incident in banking."
+    verify: regex
+    pattern: "^\\+.*\\b(amount|balance|credit|debit|total|fee|rate|interest)\\w*\\s*[:=]\\s*(float|double|Float|Double|parseFloat|Number\\()"
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: BANK-003
+    text: "A transfer is double-entry inside one database transaction — debit and credit commit together or roll back together"
+    rationale: "Prevents money disappearing or being duplicated when one leg of the transfer succeeds and the other fails."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/transfer*/**','**/transaction*/**','**/payment*/**'])"
+    enabled: true
+
+  - id: BANK-004
+    text: "No transaction or account record is physically deleted — only soft-deleted or given a new status"
+    rationale: "Prevents a retention violation; financial records must stay recoverable for the mandated period."
+    verify: regex
+    pattern: "^\\+.*(DELETE\\s+FROM\\s+(account|transaction|ledger|transfer)|\\.(delete|destroy|remove)\\(\\).*(account|transaction|ledger))"
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: BANK-005
+    text: "PII (account number, national ID, phone number) is masked in logs and in responses that do not need it (****1234)"
+    rationale: "Prevents a data-protection breach through log files or over-exposed API responses."
+    verify: regex
+    pattern: "^\\+.*(log|logger|print)\\.[a-z]+\\(.*\\b(account_number|account_no|national_id|cccd|id_number|phone|card_number)\\b(?!.*mask)"
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: BANK-006
+    text: "Every money operation carries an idempotency key — a retry does not create a duplicate transaction"
+    rationale: "Prevents a network retry from executing the same transfer twice."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/transfer*/**','**/payment*/**'])"
+    enabled: true
+
+  - id: BANK-007
+    text: "Limits (daily cap, transaction count) are checked before the operation executes, not after"
+    rationale: "Prevents exceeding a limit and only blocking afterwards, when the money has already moved."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/transfer*/**','**/withdraw*/**'])"
+    enabled: true
+
+  - id: BANK-008
+    text: "A spec for a money-related change has ACs for: insufficient balance, locked account, duplicate idempotency key, timezone cutoff"
+    rationale: "Prevents omitting mandatory business edge cases that are routinely missed and later surface as production incidents."
+    verify: llm
+    severity: major
+    applies_to: [spec]
+    applies_when: "any(ac.text.contains('tiền') or ac.text.contains('chuyển') or ac.text.contains('amount') for ac in spec.acceptance_criteria)"
+    enabled: true

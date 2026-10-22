@@ -1,0 +1,37 @@
+{
+  "role": "verifier",
+  "case": "calc_mean",
+  "steps": [
+    {
+      "text": "Pha 1–2: đọc spec/diff (có trong brief), kiểm scope, chạy đúng test_command và regression_command.",
+      "tool_calls": [
+        {"name": "test_run", "input": {}},
+        {"name": "test_run", "input": {"cmd": "pytest -q"}}
+      ],
+      "expect_in_prompt": ["### spec.yaml", "### patch/", "```diff", "### SKILL: adversarial-review", "### machine_gate"]
+    },
+    {
+      "text": "Pha 3–5: chấm từng AC, tấn công 3 góc, verdict.",
+      "tool_calls": [
+        {"name": "blackboard_write", "input": {"slot": "evidence.json", "content": {
+          "issue_id": "DDT-0001",
+          "verdict": "pass",
+          "criteria": [
+            {"id": "AC1", "result": "pass", "evidence": "tests/test_calc.py::test_mean_empty PASSED — pytest -q tests/test_calc.py: 5 passed", "evidence_type": "test_output"},
+            {"id": "AC2", "result": "pass", "evidence": "tests/test_calc.py::test_mean PASSED trong cùng lần chạy (5 passed)", "evidence_type": "test_output"},
+            {"id": "AC3", "result": "pass", "evidence": "diff chỉ đụng calc.py (+2) và tests/test_calc.py (+5); không file khác", "evidence_type": "diff_inspection"}
+          ],
+          "regression": {"ran": true, "result": "pass", "evidence": "pytest -q: 5 passed"},
+          "adversarial_attempted": [
+            "Input biên: xs=None → vẫn TypeError như trước (ngoài AC, hành vi cũ không đổi)",
+            "Reward hacking: test mới dùng pytest.raises(ValueError) thật, không hardcode",
+            "Scope creep: 2 hunk đều phục vụ AC1/AC2"
+          ],
+          "adversarial_findings": [],
+          "unverifiable": [],
+          "handoff": "Guard rỗng giống median(); thông điệp 'mean of empty list'."
+        }}}
+      ]
+    }
+  ]
+}

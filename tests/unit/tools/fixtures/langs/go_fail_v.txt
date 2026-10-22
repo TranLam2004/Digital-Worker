@@ -1,0 +1,14 @@
+=== RUN   TestRestockAndAvailable
+--- PASS: TestRestockAndAvailable (0.00s)
+=== RUN   TestReserveWithinStock
+--- PASS: TestReserveWithinStock (0.00s)
+=== RUN   TestWithTax
+--- PASS: TestWithTax (0.00s)
+=== RUN   TestCartTotal
+--- PASS: TestCartTotal (0.00s)
+=== RUN   TestReserveOverStock
+    shop_test.go:44: expected InsufficientStock, got nil
+--- FAIL: TestReserveOverStock (0.00s)
+FAIL
+FAIL	shop	0.170s
+FAIL

@@ -1,0 +1,45 @@
+# test.* — runs tests + structured parsing (pytest in P1; jest/go/cargo/mvn: exit code + tail).
+namespace: test
+sandbox: true
+artifactize: true
+ops:
+  - name: run
+    risk_tier: hard_write
+    allowed_roles: [dev, verifier]
+    timeout_sec: 240
+    sandbox_profile: inherit
+    description: "Run tests. cmd defaults to spec.test_command (the Verifier may NOT change it or use filter/affected). filter → -k (pytest), Dev only. Default timeout 240 s. Returns status (pass/fail/error/no_tests), passed, failed, failed_tests[{name, message, file}], summary_line; the full log is saved as an artifact. Errors: TIMEOUT; fake-pass patterns (|| true, ; exit 0, --no-verify) are denied."
+    input_schema:
+      type: object
+      properties:
+        cmd: { type: string }
+        filter: { type: string }
+        affected: { type: boolean, description: "Dev only, pytest: --testmon runs only the tests affected by the files just edited (inner loop). The final run must be a full run." }
+        timeout: { type: integer, minimum: 1, maximum: 600 }
+      additionalProperties: false
+  - name: coverage
+    risk_tier: read
+    allowed_roles: [verifier, runner]
+    timeout_sec: 300
+    sandbox_profile: verifier
+    description: >-
+      Run spec.test_command with pytest-cov, then diff-cover against base_commit → total_pct, delta vs baseline,
+      diff_pct, uncovered_new_lines (new lines not covered), per-file coverage. pytest only. Temp files go to TEMP;
+      the worktree is unchanged. Missing pytest-cov/diff-cover → NOT_AVAILABLE (use test.run instead).
+    input_schema:
+      type: object
+      properties:
+        cmd: { type: string, description: "Runner only. The Verifier always uses spec.test_command." }
+      additionalProperties: false
+  - name: parse
+    risk_tier: read
+    allowed_roles: [dev, verifier, runner]
+    timeout_sec: 5
+    description: "Re-parse saved test output (artifact://…) into structured form; `runner` is auto-detected when omitted (junit for XML). Returns the same fields as test.run: status, passed, failed, failed_tests, summary_line. Error: NOT_FOUND."
+    input_schema:
+      type: object
+      properties:
+        artifact: { type: string }
+        runner: { type: string, enum: [pytest, junit, generic] }
+      required: [artifact]
+      additionalProperties: false

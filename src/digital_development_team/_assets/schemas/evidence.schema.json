@@ -1,0 +1,486 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ddt/evidence",
+  "title": "Evidence",
+  "description": "Output of the Verifier (Stage 5). The MOST IMPORTANT schema for scoring: a verdict without evidence is discarded by the harness before anyone reads it. The Verifier fills verdict, criteria, regression, adversarial_findings, adversarial_attempted, handoff, unverifiable and failure_feedback_for_dev; the harness fills version, machine_gate, checklist_summary, scope_violation and canary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issue_id",
+    "version",
+    "verdict",
+    "criteria",
+    "regression",
+    "machine_gate"
+  ],
+  "properties": {
+    "issue_id": {
+      "type": "string",
+      "pattern": "^DDT-[0-9]{4,}$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Which verification attempt this is (1 = first). Filled by the harness, not the Verifier."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "inconclusive"
+      ],
+      "description": "pass: every AC pass AND regression pass. fail: at least one AC fail (failure_feedback_for_dev then required). inconclusive: tests could not be run, or at least one AC is unclear."
+    },
+    "machine_gate": {
+      "type": "object",
+      "description": "Results of the machine gate (0 LLM) that runs BEFORE the Verifier. Filled by the harness; the Verifier only reads it.",
+      "required": [
+        "build",
+        "lint",
+        "unit_test"
+      ],
+      "properties": {
+        "build": {
+          "$ref": "#/definitions/gateResult"
+        },
+        "lint": {
+          "$ref": "#/definitions/gateResult"
+        },
+        "typecheck": {
+          "$ref": "#/definitions/gateResult"
+        },
+        "unit_test": {
+          "$ref": "#/definitions/gateResult"
+        },
+        "coverage_delta": {
+          "type": "number",
+          "description": "Coverage change in percentage points after the patch. Below -2 triggers a warning."
+        },
+        "sast": {
+          "$ref": "#/definitions/gateResult",
+          "description": "SAST (bandit) on the changed files. fail ⇔ at least one HIGH finding. skipped when the tool is missing or no .py file changed. The summary carries high/medium/low counts."
+        },
+        "coverage": {
+          "$ref": "#/definitions/gateResult",
+          "description": "pytest-cov + diff-cover. pass|skipped only, never fail. The measurements live in coverage_delta / coverage_total / uncovered_new_lines."
+        },
+        "coverage_total": {
+          "type": "number",
+          "description": "Whole-repo coverage percentage after the patch."
+        },
+        "uncovered_new_lines": {
+          "type": "array",
+          "description": "New or changed lines in the diff not executed by any test. Empty = good.",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "lines"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "lines": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "blast_radius": {
+          "type": "object",
+          "description": "Blast radius of the patch (ast + CodeGraph impact + FMEA). Filled by the harness. risk is only a signal for the Leader / confidence, not a gate.",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "pass",
+                "skipped"
+              ]
+            },
+            "summary": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "changed_count": {
+              "type": "integer"
+            },
+            "affected_files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "affected_tests": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "rpn": {
+              "type": "integer"
+            },
+            "risk": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "description": "EXACTLY one entry per acceptance_criteria item in the spec, matched by id. A missing AC fails the schema.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "result",
+          "evidence"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^AC[0-9]+$"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "unclear"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 10,
+            "description": "Real command output (e.g. 'pytest ... 12 passed') OR a file:line reference. Prose such as 'looks correct' is NOT valid."
+          },
+          "evidence_type": {
+            "type": "string",
+            "enum": [
+              "test_output",
+              "file_line",
+              "lint_output",
+              "diff_inspection"
+            ]
+          }
+        }
+      }
+    },
+    "regression": {
+      "type": "object",
+      "required": [
+        "ran",
+        "result"
+      ],
+      "properties": {
+        "ran": {
+          "type": "boolean"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "skipped"
+          ]
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "failed_tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "skip_reason": {
+          "type": "string",
+          "description": "Required when ran=false: why the regression suite was not run."
+        }
+      }
+    },
+    "adversarial_findings": {
+      "type": "array",
+      "description": "The Verifier is TASKED with finding defects. An empty list is valid only when adversarial_attempted is non-empty.",
+      "items": {
+        "type": "object",
+        "required": [
+          "severity",
+          "location",
+          "description"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "major",
+              "minor",
+              "nit"
+            ]
+          },
+          "location": {
+            "type": "string",
+            "description": "Location of the finding as file:line."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "suggested_fix": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "adversarial_attempted": {
+      "type": "array",
+      "description": "Attack angles the Verifier tried without finding a defect. Proves that a real review took place.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "checklist_results": {
+      "type": "array",
+      "description": "Results of the checklists from 35-checklists. The harness fills regex/test items, the Verifier fills diff_inspection/llm items. A failed blocking item forces verdict=fail.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "result"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Z]+(-[a-z0-9]+)*-[0-9]{3}$",
+            "description": "Checklist item id, e.g. CODE-001, WEB-003, LRN-shop-services-001."
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "n/a"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "description": "Required when result=fail: file:line or the regex hit."
+          },
+          "by": {
+            "type": "string",
+            "enum": [
+              "harness",
+              "verifier"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocking",
+              "major",
+              "minor",
+              "nit"
+            ]
+          }
+        }
+      }
+    },
+    "checklist_summary": {
+      "type": "object",
+      "description": "Aggregated by the harness for the dashboard, e.g. '27/30 ✓ · 1 major'.",
+      "properties": {
+        "applied": {
+          "type": "integer"
+        },
+        "passed": {
+          "type": "integer"
+        },
+        "failed_blocking": {
+          "type": "integer"
+        },
+        "failed_major": {
+          "type": "integer"
+        },
+        "machine_ratio": {
+          "type": "number",
+          "description": "Share of items run by the harness with 0 LLM."
+        }
+      }
+    },
+    "handoff": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "At most two sentences: what the next reader (Leader / human) needs to know that the artifact does not make obvious. See 70-human-control/07-rituals."
+    },
+    "unverifiable": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "ACs that could not be verified by machine (e.g. need staging). The Leader / a human decides."
+    },
+    "failure_feedback_for_dev": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "REQUIRED when verdict=fail. At most three sentences, pointing at file:line. This is the ONLY channel through which the Dev hears from the Verifier."
+    },
+    "scope_violation": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Files the Dev touched outside spec.allowed_files. Filled by the harness from the diff. Non-empty forces verdict=fail."
+    },
+    "canary": {
+      "type": "object",
+      "description": "Filled by the harness when this task carries a mutation canary. The Verifier does NOT know this field exists.",
+      "properties": {
+        "injected": {
+          "type": "boolean"
+        },
+        "mutation_id": {
+          "type": "string"
+        },
+        "caught": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "fail"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "failure_feedback_for_dev"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "regression": {
+            "properties": {
+              "ran": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "regression": {
+            "required": [
+              "skip_reason"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "gateResult": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "skipped"
+          ]
+        },
+        "output_ref": {
+          "type": "string",
+          "description": "artifact:// reference to the full log."
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "issue_id": "DDT-0042",
+      "version": 1,
+      "verdict": "pass",
+      "machine_gate": {
+        "build": {
+          "status": "pass"
+        },
+        "lint": {
+          "status": "pass"
+        },
+        "typecheck": {
+          "status": "skipped",
+          "summary": "repo has no mypy config"
+        },
+        "unit_test": {
+          "status": "pass",
+          "summary": "14 passed in 2.1s"
+        },
+        "coverage_delta": 0.4
+      },
+      "criteria": [
+        {
+          "id": "AC1",
+          "result": "pass",
+          "evidence": "pytest tests/test_users.py::test_user_not_found -q → 1 passed",
+          "evidence_type": "test_output"
+        },
+        {
+          "id": "AC2",
+          "result": "pass",
+          "evidence": "pytest tests/test_users.py::test_user_not_found_body -q → 1 passed",
+          "evidence_type": "test_output"
+        },
+        {
+          "id": "AC3",
+          "result": "pass",
+          "evidence": "diff touches only src/api/users.py:42-58 (get_user) and tests/test_users.py; no other hunks",
+          "evidence_type": "diff_inspection"
+        }
+      ],
+      "regression": {
+        "ran": true,
+        "result": "pass",
+        "evidence": "pytest tests/ -q → 87 passed in 41s"
+      },
+      "adversarial_findings": [],
+      "adversarial_attempted": [
+        "negative id → still 404 (checked manually via pytest -k)",
+        "non-numeric id → the router validates first, never reaches the handler",
+        "race: could db.get() raise after an exists check? — no, there is only one call"
+      ],
+      "unverifiable": [],
+      "scope_violation": []
+    }
+  ]
+}

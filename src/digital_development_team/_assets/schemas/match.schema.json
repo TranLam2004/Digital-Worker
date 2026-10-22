@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "match",
+  "title": "match.json — contest item state (harness-owned)",
+  "description": "Written by the harness from Game Master: item type, points, deadline, MVS and the submit template. Agents read it (without submit_template/submission); they never write it.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["issue_id", "match_id", "item_id", "type"],
+  "properties": {
+    "issue_id": { "type": "string", "pattern": "^DDT-[0-9]{4,}$" },
+    "match_id": { "type": "string" },
+    "item_id": { "type": "string", "description": "Contest id, e.g. BUG-01" },
+    "type": { "type": "string", "enum": ["TASK", "CR", "BUG", "PI"] },
+    "points": { "type": ["number", "null"] },
+    "status": { "type": "string", "enum": ["VISIBLE", "OPEN", "CLOSED"] },
+    "revealed_at": { "type": ["string", "null"], "format": "date-time" },
+    "deadline_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Local-clock deadline (server deadline shifted by the measured server/local offset)."
+    },
+    "work_folder": { "type": "string", "description": "Folder inside the team repo where this match's source lives." },
+    "started": { "type": "boolean" },
+    "mvs": {
+      "type": "array",
+      "items": { "type": "object" },
+      "description": "Minimum Verification Scenarios — every one MUST pass; the grader also checks other scenarios."
+    },
+    "submit_template": { "type": "object" },
+    "submission": { "type": "object" },
+    "description_hash": { "type": "string" }
+  },
+  "examples": [
+    {
+      "issue_id": "DDT-0001",
+      "match_id": "M-PRACTICE-01",
+      "item_id": "BUG-01",
+      "type": "BUG",
+      "points": 200,
+      "status": "OPEN",
+      "started": true,
+      "mvs": [{ "name": "mean of [] raises ValueError", "expected": "ValueError" }]
+    }
+  ]
+}

@@ -1,0 +1,174 @@
+# escalation.schema.yaml — the form any agent uses when a human decision is needed
+# Principle: an agent is NOT allowed to just say "I can't do this". It must present options (A/B/...) plus a recommendation.
+# The human decides in 10 seconds instead of 10 minutes.
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "ddt/escalation"
+title: Escalation
+type: object
+additionalProperties: false
+required: [issue_id, raised_by, stage, type, question, options, recommendation, confidence, blocked_since]
+
+properties:
+  issue_id:
+    type: string
+    pattern: "^DDT-[0-9]{4,}$"
+    description: Internal issue id (DDT-nnnn), assigned by the Runner at Stage 0. Copy it from the brief.
+
+  raised_by:
+    type: string
+    enum: [intake, analyst, planner, dev, verifier, security, leader, runner]
+    description: Role (or the runner itself) that raised the escalation.
+
+  stage:
+    type: string
+    enum: [TRIAGE, LOCALIZE, SPEC, IMPLEMENT, VERIFY, REVIEW, GATE]
+    description: Pipeline stage the issue was in when the escalation was raised.
+
+  gate:
+    type: string
+    enum: [G0, G1, G2]
+    description: Human gate this escalation waits at. G3 has no escalation (a human presses it; no agent asks).
+
+  type:
+    type: string
+    enum: [ambiguity, risk, capability, conflict, destructive_request, budget]
+    description: |
+      ambiguity: the spec/issue is unclear and a human must pick an interpretation
+      risk: the action is risky and a human must confirm it
+      capability: the agent cannot do it (retries exhausted, build impossible, ...)
+      conflict: two issues collide and a human must choose the order
+      destructive_request: the agent needs to perform an action on the G2 (destructive) list
+      budget: the budget is nearly exhausted; asking whether to continue
+
+  question:
+    type: string
+    minLength: 20
+    maxLength: 400
+    description: A SPECIFIC question a human can answer by picking an option. Not "what should I do?".
+
+  context_refs:
+    type: array
+    items: { type: string }
+    description: Slots/files the human should look at, e.g. ["spec.yaml#ambiguities", "src/api/v1/users.py:42"].
+
+  options:
+    type: array
+    minItems: 2
+    maxItems: 4
+    description: |
+      At least two options (ids A..D), each with a cost and a risk.
+      When type=capability the last option is ALWAYS allowed to be "abort".
+    items:
+      type: object
+      required: [id, action, cost, risk]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: "^[A-D]$"
+        action:
+          type: string
+          maxLength: 200
+          description: What would be done if this option is chosen.
+        cost:
+          type: string
+          maxLength: 150
+          description: "Effort/size estimate, e.g. '+2 files, +1 test, ~15 min' or '−120 lines'"
+        risk:
+          type: string
+          enum: [low, medium, high]
+          description: Risk level of taking this option.
+        consequence:
+          type: string
+          maxLength: 200
+          description: What happens if this option is chosen (side effects, who is affected).
+        route:
+          type: string
+          enum: [continue, rework, re_localize, re_spec, merge, abort]
+          description: |
+            Optional. What the harness does when this option is chosen. Omit it and the harness re-runs the
+            stage that asked, with the human answer in the brief (continue). rework: back to IMPLEMENT ·
+            re_localize: back to LOCALIZE · re_spec: back to SPEC (Analyst rewrites the spec) ·
+            merge: merge now (G1 only, the choice counts as approval) · abort: BLOCKED.
+        spec_patch:
+          type: object
+          additionalProperties: false
+          description: |
+            Optional. Spec change applied by the harness when this option is chosen: files to add to
+            spec.allowed_files and/or a corrected test/regression command. Adding at most 3 test files or files in
+            the same directory as an allowed file is auto-approved without a human (once per issue).
+          properties:
+            allowed_files_add: { type: array, maxItems: 5, items: { type: string } }
+            test_command: { type: string }
+            regression_command: { type: string }
+
+  recommendation:
+    type: string
+    pattern: "^[A-D]$"
+    description: The agent MUST lean towards one option id. "Up to you" is not acceptable.
+
+  recommendation_reason:
+    type: string
+    maxLength: 300
+    description: Why the recommended option is preferred (one to two sentences).
+
+  confidence:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: Agent's confidence in the recommendation, 0..1.
+
+  blocked_since:
+    type: string
+    format: date-time
+    description: When the issue started waiting on this escalation (ISO 8601 date-time).
+
+  timeout_sec:
+    type: [integer, "null"]
+    description: |
+      Filled by the harness from 80-config/policy.yaml by gate + tier.
+      Typical G0: 90. G1 at T2: 300. G1 at T3: null (no timeout).
+      When the timeout expires the harness applies default_on_timeout.
+
+  default_on_timeout:
+    type: string
+    enum: [proceed_conservative, proceed_with_recommendation, block, skip_issue]
+    description: Action the harness takes when timeout_sec expires. Ignored when timeout_sec is null.
+
+  resolved:
+    type: object
+    description: Filled by the human through the dashboard; written by the harness, never by the agent.
+    properties:
+      by: { type: string, description: "Who resolved it: P1 | P2 | P3" }
+      at: { type: string, format: date-time }
+      choice: { type: string, pattern: "^[A-D]$|^timeout$|^other$|^reject$|^allow_once$|^allow_issue$|^deny$" }
+      chosen_action: { type: string, maxLength: 200, description: "Action of the chosen option, or the human note for 'other'." }
+      route: { type: string, enum: [continue, rework, re_localize, merge, abort], description: "What the harness did with the answer." }
+      note: { type: string, maxLength: 300, description: "Human note. Stored in episodic memory labelled human_correction when it differs from recommendation." }
+
+# ---------------------------------------------------------------
+# examples:
+# - issue_id: DDT-0047
+#   raised_by: analyst
+#   stage: SPEC
+#   gate: G0
+#   type: ambiguity
+#   question: "The spec says 'keep backward compatibility' — does that include API v1 (src/api/v1/), deprecated 6 months ago?"
+#   context_refs: ["spec.yaml#ambiguities", "src/api/v1/users.py", "CHANGELOG.md:12"]
+#   options:
+#     - id: A
+#       action: "Keep v1, add an adapter"
+#       cost: "+2 files, +1 test, ~15 min"
+#       risk: low
+#       consequence: "More code, but nobody breaks"
+#     - id: B
+#       action: "Drop v1, change v2 only"
+#       cost: "−120 lines, ~5 min"
+#       risk: medium
+#       consequence: "Any client still on v1 will break"
+#   recommendation: A
+#   recommendation_reason: "CHANGELOG says deprecated but not removed. No usage metrics for v1. Keeping it is the safer choice."
+#   confidence: 0.62
+#   blocked_since: "2026-10-03T09:41:12Z"
+#   timeout_sec: 90
+#   default_on_timeout: proceed_with_recommendation

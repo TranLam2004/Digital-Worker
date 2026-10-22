@@ -1,0 +1,30 @@
+{
+  "role": "security",
+  "case": "calc_mean",
+  "steps": [
+    {
+      "text": "Lite: 6 mục regex đã do harness chạy; kiểm nhanh eval/exec/subprocess trong diff.",
+      "tool_calls": [{"name": "fs_search", "input": {"pattern": "eval(", "path": "calc.py"}}],
+      "expect_in_prompt": ["### spec.yaml", "### sensitive_paths", "```diff"]
+    },
+    {
+      "text": "Không có bề mặt tấn công mới.",
+      "tool_calls": [
+        {"name": "blackboard_write", "input": {"slot": "sec_report.json", "content": {
+          "issue_id": "DDT-0001",
+          "mode": "lite",
+          "verdict": "pass",
+          "checklist": {
+            "no_secret_in_code": {"result": "pass", "evidence": "diff không có chuỗi secret"},
+            "no_secret_in_log": {"result": "pass"},
+            "no_privilege_widening": {"result": "pass"},
+            "no_new_dependency": {"result": "pass", "evidence": "không đụng requirements/pyproject"},
+            "no_disabled_check": {"result": "pass"},
+            "no_prompt_injection_trace": {"result": "pass"}
+          },
+          "findings": []
+        }}}
+      ]
+    }
+  ]
+}

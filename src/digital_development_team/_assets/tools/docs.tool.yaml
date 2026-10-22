@@ -1,0 +1,19 @@
+# docs.* — documentation of one library, preferring the version installed in the repo.
+namespace: docs
+sandbox: false
+artifactize: true
+ops:
+  - name: lookup
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev, security]
+    timeout_sec: 90
+    description: "Docs for one package: installed copy first (node_modules README/.d.ts, pydoc, go doc), then registry metadata/README (PyPI, npm), then the official docs page. `ecosystem` is detected from the repo when omitted. With `question`, a cheap model answers from those docs with quotes. Returns package, version, docs_url, sources, and answer or text. Error: NOT_FOUND."
+    input_schema:
+      type: object
+      properties:
+        package: { type: string, maxLength: 214 }
+        symbol: { type: string, maxLength: 200 }
+        question: { type: string, maxLength: 500 }
+        ecosystem: { type: string, enum: [python, javascript, go, java, dotnet] }
+      required: [package]
+      additionalProperties: false

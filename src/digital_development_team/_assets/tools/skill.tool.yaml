@@ -1,0 +1,28 @@
+# skill.* — find and load a skill when the automatically selected skills do not cover the task.
+namespace: skill
+sandbox: false
+artifactize: false
+ops:
+  - name: search
+    risk_tier: read
+    allowed_roles: [intake, analyst, planner, dev, verifier, security, leader]
+    timeout_sec: 5
+    description: "Search the skill library by what you need to do (e.g. 'debug flaky test', 'write spec for refactor'). Returns results[{name, description, for_roles, tokens}]. Load one with skill.load."
+    input_schema:
+      type: object
+      properties:
+        query: { type: string, minLength: 3 }
+        k: { type: integer, minimum: 1, maximum: 8 }
+      required: [query]
+      additionalProperties: false
+  - name: load
+    risk_tier: read
+    allowed_roles: [intake, analyst, planner, dev, verifier, security, leader]
+    timeout_sec: 5
+    description: "Load one skill by name. Returns its body (procedure, pitfalls, output checklist). Follow it when it fits your task. Error: NOT_FOUND."
+    input_schema:
+      type: object
+      properties:
+        name: { type: string, pattern: "^[a-z][a-z0-9-]*$" }
+      required: [name]
+      additionalProperties: false

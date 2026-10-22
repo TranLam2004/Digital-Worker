@@ -1,0 +1,264 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ddt/decision",
+  "title": "Decision",
+  "description": "Output of the Leader (Stage 6b): the merge/rework/escalate/block decision for one issue. Humans read these fields on the dashboard at the gate. The Leader fills the judgement fields (action, rationale, requires_human, rework_instructions, standup_line); the harness fills the computed ones (confidence, confidence_breakdown, summary_for_human) and the Leader copies them from CONTEXT.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issue_id",
+    "action",
+    "final_tier",
+    "confidence",
+    "confidence_breakdown",
+    "rationale",
+    "requires_human"
+  ],
+  "properties": {
+    "issue_id": {
+      "type": "string",
+      "pattern": "^DDT-[0-9]{4,}$"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "merge",
+        "rework",
+        "re_localize",
+        "escalate",
+        "block",
+        "supersede",
+        "close"
+      ],
+      "description": "merge: queue for G1 (or auto-merge when requires_human=false). rework: back to IMPLEMENT. re_localize: back to LOCALIZE using candidate #2. escalate: hand a form to a human (escalation_ref required). block: retries exhausted, stop. supersede: another issue made this one moot (superseded_by required). close: Dev showed with evidence that no code change is needed (answer.yaml resolution); the issue ends DONE without a merge."
+    },
+    "final_tier": {
+      "type": "string",
+      "enum": [
+        "T0",
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "description": "Effective risk tier = MAX(intake.risk_tier, spec.estimated_tier, policy hard rules, confidence bump). Never lower than intake.risk_tier. T2/T3 force requires_human=true."
+    },
+    "tier_bumped_because": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Reasons the tier was raised when final_tier > intake.risk_tier, e.g. 'sensitive_path: src/auth/', 'confidence 0.64 < 0.8'. Empty when not bumped."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Computed by the harness from confidence_breakdown using the formula in 70-human-control/03-confidence.md. The Leader reads it from CONTEXT and copies it; it never recomputes or adjusts it."
+    },
+    "confidence_breakdown": {
+      "type": "object",
+      "description": "Per-signal inputs to confidence, each 0..1. Computed by the harness; the Leader copies them from CONTEXT.",
+      "required": [
+        "test_signal",
+        "verifier_agreement",
+        "spec_clarity",
+        "familiarity",
+        "rework_penalty"
+      ],
+      "properties": {
+        "test_signal": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "verifier_agreement": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "spec_clarity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "familiarity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rework_penalty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "requires_human": {
+      "type": "boolean",
+      "description": "true → the issue waits in the G1 queue for a human. false → auto-merge, allowed only for T0/T1 with confidence ≥ 0.8."
+    },
+    "human_timeout_sec": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "How long G1 waits for a human before the timeout default applies. T2: 300. T3: null (no timeout). T0/T1: not applicable (null)."
+    },
+    "rationale": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Readable by a human in 15 seconds. Three sentences: what was done · what the evidence says · what risk remains."
+    },
+    "summary_for_human": {
+      "type": "object",
+      "description": "Compact package for dashboard panel ④. Aggregated by the harness from the slots (evidence, patch stat, sec_report, budget); the Leader does not compute these numbers.",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "ac_pass_count": {
+          "type": "string",
+          "pattern": "^[0-9]+/[0-9]+$"
+        },
+        "files_changed": {
+          "type": "integer"
+        },
+        "lines_added": {
+          "type": "integer"
+        },
+        "lines_removed": {
+          "type": "integer"
+        },
+        "regression": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "skipped"
+          ]
+        },
+        "security": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "needs_human",
+            "n/a"
+          ]
+        },
+        "rework_count": {
+          "type": "integer"
+        },
+        "tokens_used": {
+          "type": "integer"
+        },
+        "wall_time_sec": {
+          "type": "integer"
+        },
+        "top_risk": {
+          "type": "string",
+          "maxLength": 150
+        }
+      }
+    },
+    "rework_instructions": {
+      "type": "string",
+      "description": "When action=rework: what the Leader adds beyond evidence.failure_feedback_for_dev, e.g. 'use candidate #2', 'load skill X'."
+    },
+    "escalation_ref": {
+      "type": "string",
+      "description": "When action=escalate: reference to the escalation.yaml raised for this decision. Required by the schema in that case."
+    },
+    "superseded_by": {
+      "type": "string",
+      "pattern": "^DDT-[0-9]{4,}$"
+    },
+    "standup_line": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "One line for standup.md, e.g. 'DDT-0042 bug/api — merged T1, 1 rework, 48k tok, 11m'."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "escalate"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "escalation_ref"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "supersede"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "superseded_by"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "final_tier": {
+            "enum": [
+              "T2",
+              "T3"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "requires_human": {
+            "const": true
+          }
+        }
+      }
+    }
+  ],
+  "examples": [
+    {
+      "issue_id": "DDT-0042",
+      "action": "merge",
+      "final_tier": "T1",
+      "tier_bumped_because": [],
+      "confidence": 0.87,
+      "confidence_breakdown": {
+        "test_signal": 1.0,
+        "verifier_agreement": 1.0,
+        "spec_clarity": 1.0,
+        "familiarity": 0.4,
+        "rework_penalty": 0.0
+      },
+      "requires_human": false,
+      "human_timeout_sec": null,
+      "rationale": "3/3 AC pass with test output. Regression: 87 passed. Security lite: pass. Module api/users has never been handled before so familiarity is low, but tier T1 + confidence 0.87 is enough to auto-merge.",
+      "summary_for_human": {
+        "title": "GET /api/users/{id} 500 → 404",
+        "ac_pass_count": "3/3",
+        "files_changed": 2,
+        "lines_added": 12,
+        "lines_removed": 2,
+        "regression": "pass",
+        "security": "pass",
+        "rework_count": 0,
+        "tokens_used": 48213,
+        "wall_time_sec": 672,
+        "top_risk": "None"
+      },
+      "standup_line": "DDT-0042 bug/api — merged T1 auto, 0 rework, 48k tok, 11m"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+FAIL test/inventory.test.js
+  Inventory
+    ✓ restock and available (2 ms)
+    ✕ reserve over stock (3 ms)
+
+  ● Inventory › reserve over stock
+
+    expect(received).toThrow()
+
+    Received function did not throw
+
+      10 |   inv.restock('A', 1);
+    > 11 |   expect(() => inv.reserve('A', 5)).toThrow();
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 3 passed, 4 total
+Snapshots:   0 total
+Time:        0.512 s

@@ -1,0 +1,32 @@
+{
+  "role": "dev",
+  "case": "calc_mean",
+  "steps": [
+    {
+      "text": "Đọc calc.py và test hiện có trước khi sửa.",
+      "tool_calls": [
+        {"name": "fs_read", "input": {"path": "calc.py"}},
+        {"name": "fs_read", "input": {"path": "tests/test_calc.py"}}
+      ],
+      "expect_in_prompt": ["## OUTPUT CONTRACT", "allowed_files", "calc.py"]
+    },
+    {
+      "text": "Viết test fail trước (TDD), rồi thêm guard rỗng.",
+      "tool_calls": [
+        {"name": "fs_edit", "input": {"path": "tests/test_calc.py", "old": "def test_median_empty():", "new": "def test_mean_empty():\n    with pytest.raises(ValueError):\n        mean([])\n\n\ndef test_median_empty():"}},
+        {"name": "fs_edit", "input": {"path": "calc.py", "old": "def mean(xs: list[float]) -> float:\n    return sum(xs) / len(xs)", "new": "def mean(xs: list[float]) -> float:\n    if not xs:\n        raise ValueError(\"mean of empty list\")\n    return sum(xs) / len(xs)"}}
+      ]
+    },
+    {
+      "text": "Chạy test_command.",
+      "tool_calls": [{"name": "test_run", "input": {"cmd": "pytest -q tests/test_calc.py"}}]
+    },
+    {
+      "text": "Test pass. Tự review: đúng file trong allowlist, không thừa, không phá hành vi cũ. Commit và nộp patch.",
+      "tool_calls": [
+        {"name": "git_commit", "input": {"message": "mean(): raise ValueError on empty list"}},
+        {"name": "blackboard_write", "input": {"slot": "patch/", "content": {"impl_log": "Thêm guard `if not xs: raise ValueError` trong mean(); test mới test_mean_empty. pytest -q tests/test_calc.py: 5 passed.", "handoff": "Hành vi mới: mean([]) raise ValueError (nhất quán với median)."}}}
+      ]
+    }
+  ]
+}

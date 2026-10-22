@@ -1,0 +1,36 @@
+# user.ask — a structured question to a human = write escalation.yaml + wait at a gate. TODO(P2): real pause; P1 writes the escalation, then returns a blocked hint.
+namespace: user
+sandbox: false
+artifactize: false
+ops:
+  - name: ask
+    risk_tier: pause
+    allowed_roles: [analyst, dev, leader]
+    timeout_sec: inherit
+    implemented: false
+    description: "Ask a human a structured question: type · question ≥20 chars · 2–4 options {id, action, cost, risk low/medium/high, optional consequence} · recommendation (+ reason) · confidence 0–1 · optional context_refs. Writes escalation.yaml and pauses at a gate. The 3rd ask per issue is denied (TOO_MANY_ASKS). P1: returns NOT_IMPLEMENTED — write the escalation via blackboard.write and return blocked."
+    input_schema:
+      type: object
+      properties:
+        type: { type: string, enum: [ambiguity, risk, capability, conflict, destructive_request, budget] }
+        question: { type: string, minLength: 20 }
+        options:
+          type: array
+          minItems: 2
+          maxItems: 4
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              action: { type: string }
+              cost: { type: string }
+              risk: { type: string, enum: [low, medium, high] }
+              consequence: { type: string }
+            required: [id, action, cost, risk]
+            additionalProperties: false
+        recommendation: { type: string }
+        recommendation_reason: { type: string }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        context_refs: { type: array, items: { type: string } }
+      required: [type, question, options, recommendation, confidence]
+      additionalProperties: false

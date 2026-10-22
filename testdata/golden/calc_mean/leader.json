@@ -1,0 +1,11 @@
+{
+  "role": "leader",
+  "case": "calc_mean",
+  "steps": [
+    {
+      "text": "{\"issue_id\": \"DDT-0001\", \"action\": \"merge\", \"final_tier\": \"T1\", \"tier_bumped_because\": [], \"confidence\": 0.81, \"confidence_breakdown\": {\"test_signal\": 1.0, \"verifier_agreement\": 1.0, \"spec_clarity\": 0.8, \"familiarity\": 0.4, \"rework_penalty\": 0.0}, \"requires_human\": false, \"rationale\": \"Verifier pass 3/3 AC với evidence từ pytest, regression pass, Security lite pass. Patch 2 file nhỏ trong allowlist, 0 rework. Rủi ro còn lại: module lạ (familiarity 0.4) — chấp nhận ở T1.\", \"summary_for_human\": {\"title\": \"mean([]) raises ZeroDivisionError\", \"ac_pass_count\": \"3/3\", \"files_changed\": 2, \"lines_added\": 7, \"lines_removed\": 0, \"regression\": \"pass\", \"security\": \"pass\", \"rework_count\": 0, \"tokens_used\": 0, \"wall_time_sec\": 0, \"top_risk\": \"Module chưa xử lý lần nào\"}, \"standup_line\": \"DDT-0001 bug/calc — merged T1 auto, 0 rework\"}",
+      "expect_in_prompt": ["### evidence.json", "### sec_report.json", "### Confidence", "### patch/ (stat)", "### SKILL: escalation-form"],
+      "usage": {"tokens_in": 5200, "tokens_out": 380}
+    }
+  ]
+}

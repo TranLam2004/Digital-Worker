@@ -1,0 +1,6 @@
+id,title,body,labels,priority,blocked_by
+1,mean([]) raises ZeroDivisionError,"Calling calc.mean([]) crashes with ZeroDivisionError.
+Expected: raise ValueError('mean of empty list').
+Repro: python -c ""import calc; calc.mean([])""",bug,P2,
+2,Add median() to calc,"We need a median(xs) function next to mean(). Should handle even/odd length and raise ValueError on empty.",change_request;calc,P3,1
+3,Why does mean return float for ints?,"Question: mean([2,4]) returns 3.0 — is that intended? No code change requested.",question,P3,

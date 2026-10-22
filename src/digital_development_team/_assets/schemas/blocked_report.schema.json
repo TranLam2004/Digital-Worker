@@ -1,0 +1,174 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ddt/blocked_report",
+  "title": "BlockedReport",
+  "description": "Written by the harness (0 LLM) when an issue ends BLOCKED: why it stopped, what was tried, what work is kept, and how a human can unblock it. Read on the dashboard and by `ddt reopen`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issue_id",
+    "category",
+    "failure_class",
+    "stage",
+    "summary",
+    "tried",
+    "unblock_options",
+    "recommendation",
+    "resumable"
+  ],
+  "properties": {
+    "issue_id": {
+      "type": "string",
+      "pattern": "^DDT-[0-9]{4,}$"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "needs_decision",
+        "needs_access",
+        "needs_info",
+        "environment",
+        "budget",
+        "policy",
+        "capability",
+        "cancelled"
+      ],
+      "description": "What kind of human help unblocks it."
+    },
+    "failure_class": {
+      "type": "string",
+      "description": "Deterministic classification (runner/recovery.py)."
+    },
+    "stage": {
+      "type": "string",
+      "description": "Stage where the last failure happened."
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "hint": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "tried": {
+      "type": "array",
+      "description": "Recovery steps and retries already spent.",
+      "items": {
+        "type": "object",
+        "required": [
+          "step"
+        ],
+        "properties": {
+          "step": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "partial": {
+      "type": "object",
+      "description": "Work kept in the worktree; `ddt reopen` continues from it.",
+      "properties": {
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "worktree": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "files_touched": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spec_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "progress": {
+          "type": "object",
+          "description": "Last progress.yaml Dev wrote: which AC are done and the next step."
+        }
+      }
+    },
+    "unblock_options": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "action"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-D]$"
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "reopen_at": {
+            "type": "string"
+          },
+          "grant": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "allowlist_add": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "budget_pct": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 300
+              },
+              "test_command": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "recommendation": {
+      "type": "string",
+      "pattern": "^[A-D]$"
+    },
+    "resumable": {
+      "type": "boolean"
+    },
+    "reopens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "at": {
+      "type": "string"
+    }
+  }
+}

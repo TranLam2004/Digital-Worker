@@ -1,0 +1,47 @@
+# memory.* — kinh nghiệm của repo (50-knowledge): episode · fact · skill học được. Ghi chỉ Learner, luôn qua quét + cách ly.
+namespace: memory
+sandbox: false
+artifactize: true
+ops:
+  - name: search
+    risk_tier: read
+    allowed_roles: [intake, planner, analyst, dev, leader, learner]
+    timeout_sec: 5
+    description: "Search past issues of this repo (episodes with lesson / failure reason), facts and learned skills. Filter by `module` (intake.affected_area) and `type`. Use before guessing how this repo does something."
+    input_schema: { type: object, properties: { query: { type: string }, module: { type: string }, type: { type: string } }, required: [query], additionalProperties: false }
+  - name: get
+    risk_tier: read
+    allowed_roles: [intake, planner, analyst, dev, leader, learner]
+    timeout_sec: 5
+    description: "Fetch one episode (`DDT-0001`), fact (`F0001`) or learned skill (`learned-<slug>`, full text) by `id`."
+    input_schema: { type: object, properties: { id: { type: string }, kind: { type: string, enum: [episode, fact, skill] } }, required: [id], additionalProperties: false }
+  - name: worker_stats
+    risk_tier: read
+    allowed_roles: [leader, learner]
+    timeout_sec: 5
+    description: "Pass rate per (role, issue type, module), optionally filtered by `role` / `module`."
+    input_schema: { type: object, properties: { role: { type: string }, module: { type: string } }, additionalProperties: false }
+  - name: write_episode
+    risk_tier: soft_write
+    allowed_roles: [learner]
+    timeout_sec: 5
+    description: "Save the lesson of the issue being learned: `episode.lesson` = one sentence 'next time …' (≤ 300 chars, no code); optional `episode.failure_reason`."
+    input_schema: { type: object, properties: { episode: { type: object, properties: { lesson: { type: string }, failure_reason: { type: string } }, required: [lesson] } }, required: [episode], additionalProperties: false }
+  - name: promote_fact
+    risk_tier: soft_write
+    allowed_roles: [learner]
+    timeout_sec: 5
+    description: "Propose a repo fact: `fact.text` (one sentence ≤ 200 chars), `fact.module`, `fact.evidence` = ids of ≥ 2 issues that PASSED and show it. Saved as candidate; becomes active after it helps later issues pass."
+    input_schema: { type: object, properties: { fact: { type: object, properties: { text: { type: string }, module: { type: string }, evidence: { type: array, items: { type: string } } }, required: [text, module, evidence] } }, required: [fact], additionalProperties: false }
+  - name: demote_fact
+    risk_tier: soft_write
+    allowed_roles: [learner]
+    timeout_sec: 5
+    description: "Retire a learner-made fact (`id`) that this issue proved wrong; `reason` says how."
+    input_schema: { type: object, properties: { id: { type: string }, reason: { type: string } }, required: [id, reason], additionalProperties: false }
+  - name: write_skill
+    risk_tier: soft_write
+    allowed_roles: [learner]
+    timeout_sec: 5
+    description: "Create a learned skill (`skill.text` = full SKILL.md) or fix one (`skill.name` + `skill.find` + `skill.replace`). The harness scans it: problems → quarantined (fix and write again); clean → candidate."
+    input_schema: { type: object, properties: { skill: { type: object, properties: { text: { type: string }, name: { type: string }, find: { type: string }, replace: { type: string } } } }, required: [skill], additionalProperties: false }

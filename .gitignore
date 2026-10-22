@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-codex/
+.test-results-codex.txt
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# DDT runtime (home nằm ngoài repo, nhưng phòng khi)
+*.ddt/
+.ddt/
+state/
+work/
+worktrees/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local credentials
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# KHÔNG ignore _assets — hatchling tôn trọng .gitignore
+!src/digital_development_team/_assets/**

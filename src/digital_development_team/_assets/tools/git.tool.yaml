@@ -1,0 +1,46 @@
+# git.* — worktree only. There is NO push/remote/reset --hard/checkout main — not denied, they simply do not exist.
+namespace: git
+sandbox: false
+artifactize: true
+ops:
+  - name: diff
+    risk_tier: read
+    allowed_roles: [dev, verifier, security, leader]
+    timeout_sec: 10
+    description: "Diff from the base branch to the working tree, including uncommitted changes; `path` limits it to one file. stat=true returns statistics only (always forced for the Leader). Returns files[{path, added, removed, hunks}], total_added, total_removed, base and diff (empty with stat). Error: GIT, NO_WORKTREE."
+    input_schema:
+      type: object
+      properties:
+        stat: { type: boolean }
+        path: { type: string }
+      additionalProperties: false
+  - name: log
+    risk_tier: read
+    allowed_roles: [security, planner]
+    timeout_sec: 10
+    description: "Commit history with anonymized authors. `n` defaults to 20 (≤100); `path` limits it to one path; `search` = git -S<string>: commits that added or removed that string. Returns commits[{sha, date, author_hash, message, files_changed}]."
+    input_schema:
+      type: object
+      properties:
+        path: { type: string }
+        n: { type: integer, minimum: 1, maximum: 100 }
+        search: { type: string }
+      additionalProperties: false
+  - name: status
+    risk_tier: read
+    allowed_roles: [dev]
+    timeout_sec: 5
+    description: "Worktree status. Returns branch and the modified, untracked and staged file lists."
+    input_schema: { type: object, properties: {}, additionalProperties: false }
+  - name: commit
+    risk_tier: soft_write
+    allowed_roles: [dev]
+    timeout_sec: 10
+    description: "Commit in the worktree (git add -A first; `all` defaults to true). The message is auto-prefixed with ddt(<issue>):. Refused when a changed file is outside spec.allowed_files. Returns sha, files, insertions, deletions. Errors: SCOPE (lists the out-of-scope files — revert them first), NOTHING_TO_COMMIT, GIT."
+    input_schema:
+      type: object
+      properties:
+        message: { type: string, minLength: 3 }
+        all: { type: boolean }
+      required: [message]
+      additionalProperties: false

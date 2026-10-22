@@ -1,0 +1,4 @@
+{"items": [
+  {"number": 42, "title": "GET /users/{id} returns 500 for missing user", "body": "Should be 404.", "labels": [{"name": "bug"}, {"name": "api"}], "html_url": "https://github.com/x/y/issues/42"},
+  {"number": 43, "title": "Rotate leaked token in CI logs", "body": "Token printed in build log.", "labels": [{"name": "security"}], "priority": "high"}
+]}

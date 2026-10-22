@@ -1,0 +1,114 @@
+# clarify.schema.yaml — a single-round, schema-bound question to a peer agent. This is NOT a chat.
+# Dev asks Analyst about the spec. Planner asks Intake about a hint. One question, one answer, done.
+# Cheaper than G0 (no human needed) and faster than a rework. Hard limits keep it from turning into a conversation.
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "ddt/clarify"
+title: Clarify
+type: object
+additionalProperties: false
+required: [issue_id, from, to, about, question, options, asked_at]
+
+properties:
+  issue_id:
+    type: string
+    pattern: "^DDT-[0-9]{4,}$"
+    description: Internal issue id (DDT-nnnn), assigned by the Runner at Stage 0. Copy it from the brief.
+
+  from:
+    type: string
+    enum: [dev, planner, security]
+    description: Role asking the question. Verifier is deliberately excluded to preserve its independence.
+
+  to:
+    type: string
+    enum: [analyst, planner, intake]
+    description: |
+      Role that answers. Valid pairs:
+        dev → analyst (about the spec)
+        dev → planner (about the plan / candidates)
+        planner → intake (about hints / issue type)
+        security → analyst (about security acceptance criteria)
+      There is no → dev, → verifier or → leader (the leader is reached through escalation.yaml).
+
+  about:
+    type: string
+    description: Slot and field the question is about, e.g. "spec.yaml#acceptance_criteria[1]" or "plan.yaml#candidates[0].files".
+
+  question:
+    type: string
+    minLength: 20
+    maxLength: 300
+    description: Specific question pointing at a concrete location. Not "what does the spec mean?".
+
+  options:
+    type: array
+    minItems: 2
+    maxItems: 3
+    description: The asker MUST offer at least two candidate interpretations (ids A..C). The answerer picks one or chooses other.
+    items:
+      type: object
+      required: [id, interpretation]
+      properties:
+        id: { type: string, pattern: "^[A-C]$" }
+        interpretation: { type: string, maxLength: 200 }
+
+  leaning:
+    type: string
+    pattern: "^[A-C]$"
+    description: Option the asker leans towards. If the answerer times out, the harness uses leaning as the choice.
+
+  asked_at:
+    type: string
+    format: date-time
+    description: When the question was asked (ISO 8601 date-time).
+
+  answer:
+    type: object
+    description: Filled by the answering agent. The harness spawns the `to` role with a brief = question + related artifact, one call.
+    required: [by, choice, answered_at]
+    additionalProperties: false
+    properties:
+      by: { type: string }
+      choice: { type: string, pattern: "^[A-C]$|^other$" }
+      note:
+        type: string
+        maxLength: 300
+        description: Required when choice=other. Encouraged otherwise — one sentence of reasoning.
+      spec_patch:
+        type: object
+        description: |
+          If the analyst finds the spec incomplete, a proposed JSON Patch for spec.yaml.
+          The harness does NOT apply it automatically — a new spec.yaml version is written only when the
+          Leader approves at GATE; otherwise Dev may use it as extra CONTEXT right away (spec unchanged).
+      answered_at: { type: string, format: date-time }
+
+  timeout_sec:
+    type: integer
+    default: 60
+    description: Harness-managed. The `to` agent is a single call and rarely times out. On timeout, choice = leaning.
+
+# ───────────────────────── Hard limits (policy) ─────────────────────────
+# - At most 1 clarify per issue per asking agent. A second one is denied with the hint
+#   "use spec.ambiguities[].assumed or user.ask".
+# - The answering agent is a FRESH PROCESS, one call, context = its own artifact + the question. It remembers nothing else.
+# - There is no "re-answer" and no "follow-up". One round.
+# - When Dev asks Analyst, Analyst does NOT see Dev's patch. Only the spec + the question.
+# - Cost: one Sonnet call, ~3k tokens. Cheaper than one rework (~50k).
+
+# ───────────────────────── examples ─────────────────────────
+# - issue_id: DDT-0042
+#   from: dev
+#   to: analyst
+#   about: "spec.yaml#acceptance_criteria[1]"
+#   question: "AC2 'standard 404 body' — does it include a request_id field? The spec is silent, but every error response in this repo carries request_id by convention"
+#   options:
+#     - { id: A, interpretation: "Include request_id — follow the repo convention" }
+#     - { id: B, interpretation: "No — the AC only mentions error + id" }
+#   leaning: A
+#   asked_at: "2026-10-03T09:21:04Z"
+#   answer:
+#     by: analyst
+#     choice: A
+#     note: "Correct, REPO.md#convention says every error carries request_id. I missed it."
+#     spec_patch: [{ op: replace, path: /acceptance_criteria/1/text, value: "404 body has the shape {error, id, request_id}" }]
+#     answered_at: "2026-10-03T09:21:31Z"

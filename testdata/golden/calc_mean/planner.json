@@ -1,0 +1,39 @@
+{
+  "role": "planner",
+  "case": "calc_mean",
+  "steps": [
+    {
+      "text": "Bước 1 ripgrep theo entry_hints, bước 2 skeleton.",
+      "tool_calls": [
+        {"name": "fs_search", "input": {"pattern": "len(xs)"}},
+        {"name": "fs_list", "input": {"path": ".", "skeleton": true}}
+      ],
+      "expect_in_prompt": ["### intake.yaml", "### SKILL: localize-3-tier", "entry_hints"]
+    },
+    {
+      "text": "Bước 3 đọc full calc.py để xác định dòng.",
+      "tool_calls": [{"name": "fs_read", "input": {"path": "calc.py"}}]
+    },
+    {
+      "text": "Ghi plan.",
+      "tool_calls": [
+        {"name": "blackboard_write", "input": {"slot": "plan.yaml", "content": {
+          "issue_id": "DDT-0001",
+          "localize_method": ["ripgrep", "skeleton", "full_read"],
+          "candidates": [
+            {"rank": 1, "files": [{"path": "calc.py", "symbols": ["mean"], "lines": "8-9"}], "confidence": 0.92, "reason": "mean() chia cho len(xs) không kiểm rỗng — khớp stack trace ZeroDivisionError.", "callers_affected": []}
+          ],
+          "steps": [
+            {"order": 1, "action": "write_failing_test", "target": "tests/test_calc.py", "note": "test_mean_empty: pytest.raises(ValueError)"},
+            {"order": 2, "action": "modify", "target": "calc.py", "note": "guard `if not xs: raise ValueError` giống median()"},
+            {"order": 3, "action": "run_test", "target": "pytest -q tests/test_calc.py"}
+          ],
+          "hot_files_touched": ["calc.py"],
+          "rollback": "git revert HEAD",
+          "estimated_complexity": "trivial",
+          "needs_containment": false
+        }}}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+> Task :test FAILED
+
+ShopTest > reserveOverStock() FAILED
+    org.opentest4j.AssertionFailedError at ShopTest.java:32
+
+4 tests completed, 1 failed
+
+FAILURE: Build failed with an exception.

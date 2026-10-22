@@ -1,0 +1,38 @@
+# pkg.* — install packages from official registries only. The tool builds the command; you give name@exact-version.
+namespace: pkg
+sandbox: true
+artifactize: false
+ops:
+  - name: install
+    risk_tier: hard_write
+    allowed_roles: [dev]
+    timeout_sec: 660
+    description: "Install up to 5 packages for THIS worktree without changing the manifest: pypi → .ddt/site (on PYTHONPATH for every command here), npm → --no-save. Each `packages` entry is `name@exact-version`. Checked first: exact pin, typosquat, release age, OSV (malicious = denied, known vulns = reported in checks). Use it to try a library; to keep it, pkg.add. Errors: pkg:* (denied), INSTALL_FAILED."
+    input_schema:
+      type: object
+      properties:
+        ecosystem: { type: string, enum: [pypi, npm] }
+        packages: { type: array, minItems: 1, maxItems: 5, items: { type: string, maxLength: 120 } }
+        reason: { type: string, maxLength: 200 }
+      required: [ecosystem, packages, reason]
+      additionalProperties: false
+  - name: add
+    risk_tier: hard_write
+    allowed_roles: [dev]
+    timeout_sec: 660
+    description: "Add a dependency to the manifest (npm --save-exact, go get, dotnet add package). Needs human approval (G2) once per issue. Same checks as pkg.install. `project` = the .csproj for nuget."
+    input_schema:
+      type: object
+      properties:
+        ecosystem: { type: string, enum: [npm, go, nuget] }
+        packages: { type: array, minItems: 1, maxItems: 5, items: { type: string, maxLength: 120 } }
+        project: { type: string }
+        reason: { type: string, maxLength: 200 }
+      required: [ecosystem, packages, reason]
+      additionalProperties: false
+  - name: restore
+    risk_tier: hard_write
+    allowed_roles: [dev]
+    timeout_sec: 900
+    description: "Install the dependencies the repo already declares (npm ci --ignore-scripts, pip -r requirements.txt into .ddt/site, go mod download, mvn dependency:go-offline, dotnet restore). Run it when tests fail with 'module not found'."
+    input_schema: { type: object, properties: {}, additionalProperties: false }

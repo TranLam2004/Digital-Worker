@@ -1,0 +1,81 @@
+# project-type/web-api — applies when REPO.md.project_type == web-api. 8 items.
+meta:
+  name: web-api
+  source: project-type
+  applies_to_default: [patch]
+  version: 1
+  owner: P3
+  applies_when_repo: "project_type == 'web-api'"
+
+items:
+  - id: WEB-001
+    text: "New or modified endpoints return the semantically correct HTTP status (404 not found, 400 bad input, 401/403 auth, 409 conflict, 500 only for genuine errors)"
+    rationale: "Prevents clients that rely on status codes from misinterpreting the result and retrying or failing incorrectly."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/api/**','**/routes/**','**/handlers/**','**/controllers/**','**/views/**'])"
+    enabled: true
+
+  - id: WEB-002
+    text: "Error responses use the structure defined in REPO.md#convention (the same {error, code, ...} shape as the other endpoints)"
+    rationale: "Prevents client error handling from breaking on an endpoint that returns a different error shape."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/api/**','**/routes/**','**/handlers/**'])"
+    enabled: true
+
+  - id: WEB-003
+    text: "New path, query and body parameters are validated (schema/pydantic/joi/zod/@Valid) before they reach business logic"
+    rationale: "Prevents injection, and prevents returning 500 instead of 400 on malformed input."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/api/**','**/routes/**','**/handlers/**'])"
+    enabled: true
+
+  - id: WEB-004
+    text: "No database query inside a new loop (N+1) — no for/map body containing .get()/.filter()/.find()/query("
+    rationale: "Prevents a performance regression where the number of queries scales with the size of the result set."
+    verify: regex
+    pattern: "^\\+\\s*(for|while|\\.map\\(|\\.forEach\\().*\\n(^\\+.*\\n){0,5}^\\+.*\\.(get|filter|find|query|execute|fetch)\\("
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    enabled: true
+
+  - id: WEB-005
+    text: "New mutating endpoints (POST/PUT/PATCH/DELETE) carry the same auth decorator or middleware as the other endpoints on the same router"
+    rationale: "Prevents an unauthenticated endpoint that lets anyone modify data."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/api/**','**/routes/**','**/handlers/**'])"
+    enabled: true
+
+  - id: WEB-006
+    text: "The response shape of an existing endpoint is unchanged (no removed field, no type change) unless an AC explicitly says so — breaking change"
+    rationale: "Prevents breaking existing clients that depend on the current response contract."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "not spec.goal.contains('breaking')"
+    enabled: true
+
+  - id: WEB-007
+    text: "New list endpoints are paginated or limited — they never return the whole table"
+    rationale: "Prevents out-of-memory errors and timeouts once the table grows."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "any(ac.text.contains('list') or ac.text.contains('danh sách') for ac in spec.acceptance_criteria)"
+    enabled: true
+
+  - id: WEB-008
+    text: "New PUT/DELETE endpoints are idempotent — calling them twice yields the same result"
+    rationale: "Prevents unsafe retries: a client that re-sends after a timeout must not trigger a second side effect."
+    verify: llm
+    severity: minor
+    applies_to: [patch]
+    enabled: true

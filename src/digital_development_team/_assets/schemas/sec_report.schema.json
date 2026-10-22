@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ddt/sec_report",
+  "title": "SecurityReport",
+  "description": "Output of the Security Reviewer (Stage 6a). Mandatory when the patch touches sensitive_paths or type=security_incident; for ordinary issues a reduced checklist (mode=lite). Every checklist item is an enum backed by evidence — no prose verdicts. The reviewer never edits code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issue_id", "mode", "verdict", "checklist"],
+  "properties": {
+    "issue_id": { "type": "string", "pattern": "^DDT-[0-9]{4,}$" },
+    "mode": {
+      "type": "string",
+      "enum": ["lite", "full", "incident_5c"],
+      "description": "lite: ordinary issue, the 6 required checklist items. full: patch touches a sensitive path, all items. incident_5c: type=security_incident, the incident_5c block is required."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail", "needs_human"],
+      "description": "pass: no blocking finding. fail → the patch must not merge. needs_human → the tier is forced to T3 and escalate_reason is required."
+    },
+    "checklist": {
+      "type": "object",
+      "description": "One enum result per item (pass | fail | n/a) with evidence (command output or file:line). No prose. The six required items apply in every mode; the others when relevant.",
+      "required": ["no_secret_in_code", "no_secret_in_log", "no_privilege_widening", "no_new_dependency", "no_disabled_check", "no_prompt_injection_trace"],
+      "properties": {
+        "no_secret_in_code": { "$ref": "#/definitions/check" },
+        "no_secret_in_log": { "$ref": "#/definitions/check" },
+        "no_privilege_widening": { "$ref": "#/definitions/check" },
+        "no_new_dependency": { "$ref": "#/definitions/check" },
+        "no_disabled_check": { "$ref": "#/definitions/check", "description": "No existing validation, auth check or test was disabled or skipped." },
+        "no_prompt_injection_trace": { "$ref": "#/definitions/check", "description": "The patch shows no sign of following instructions embedded in the issue body (prompt injection)." },
+        "input_validated": { "$ref": "#/definitions/check" },
+        "error_not_leaking": { "$ref": "#/definitions/check", "description": "Error messages do not leak stack traces, file paths or schema details." },
+        "sast_clean": { "$ref": "#/definitions/check" },
+        "dependency_scan_clean": { "$ref": "#/definitions/check" }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "cwe_or_category", "location", "description"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
+          "cwe_or_category": { "type": "string", "description": "CWE id (e.g. CWE-89), OWASP category (e.g. A03) or an internal category." },
+          "location": { "type": "string" },
+          "description": { "type": "string", "maxLength": 400 },
+          "remediation": { "type": "string" }
+        }
+      }
+    },
+    "incident_5c": {
+      "type": "object",
+      "description": "Only when mode=incident_5c. One status block per C: contain, confirm, correct, check, communicate.",
+      "required": ["contain", "confirm", "correct", "check", "communicate"],
+      "properties": {
+        "contain": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "type": "string", "enum": ["proposed", "applied", "not_needed"] },
+            "measure": { "type": "string", "description": "Containment measure taken or proposed: disable endpoint / revoke token / rate limit / feature flag off." },
+            "proposed_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        "confirm": {
+          "type": "object",
+          "required": ["poc_exists"],
+          "properties": {
+            "poc_exists": { "type": "boolean" },
+            "poc_ref": { "type": "string", "description": "Test or script that reproduces the vulnerability BEFORE the fix." },
+            "exploited_evidence": { "type": "string", "enum": ["none_found", "suspected", "confirmed", "not_checked"] }
+          }
+        },
+        "correct": {
+          "type": "object",
+          "required": ["variant_hunt_done"],
+          "properties": {
+            "variant_hunt_done": { "type": "boolean" },
+            "variants_found": { "type": "array", "items": { "type": "string" }, "description": "Other locations that share the same vulnerable pattern." },
+            "variants_fixed_in_this_patch": { "type": "boolean" }
+          }
+        },
+        "check": {
+          "type": "object",
+          "required": ["poc_no_longer_reproduces"],
+          "properties": {
+            "poc_no_longer_reproduces": { "type": "boolean" },
+            "regression_pass": { "type": "boolean" }
+          }
+        },
+        "communicate": {
+          "type": "object",
+          "properties": {
+            "advisory_ref": { "type": "string" },
+            "secret_rotation_needed": { "type": "boolean", "description": "true → becomes a checklist item for a HUMAN; the agent never rotates secrets itself." },
+            "user_notification_needed": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "redaction_applied": {
+      "type": "boolean",
+      "description": "Filled by the harness: whether logs/attachments had secrets and PII redacted before entering the context."
+    },
+    "escalate_reason": {
+      "type": "string",
+      "description": "Required when verdict=needs_human: what a human must decide and why the reviewer could not."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "incident_5c" } } },
+      "then": { "required": ["incident_5c"] }
+    },
+    {
+      "if": { "properties": { "verdict": { "const": "needs_human" } } },
+      "then": { "required": ["escalate_reason"] }
+    }
+  ],
+  "definitions": {
+    "check": {
+      "type": "object",
+      "required": ["result"],
+      "properties": {
+        "result": { "type": "string", "enum": ["pass", "fail", "n/a"] },
+        "evidence": { "type": "string" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "issue_id": "DDT-0042",
+      "mode": "lite",
+      "verdict": "pass",
+      "checklist": {
+        "no_secret_in_code": { "result": "pass", "evidence": "grep -E '(api_key|secret|password)\\s*=' diff → 0" },
+        "no_secret_in_log": { "result": "pass" },
+        "no_privilege_widening": { "result": "pass" },
+        "no_new_dependency": { "result": "pass", "evidence": "requirements.txt not in diff" },
+        "no_disabled_check": { "result": "pass" },
+        "no_prompt_injection_trace": { "result": "pass" },
+        "error_not_leaking": { "result": "pass", "evidence": "404 body contains only error code + id, no stack trace" }
+      },
+      "findings": [],
+      "redaction_applied": true
+    }
+  ]
+}

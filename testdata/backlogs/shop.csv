@@ -1,0 +1,8 @@
+id,title,body,labels,priority,blocked_by
+1,Inventory.reserve() allows reserving more than available stock,"Inventory.reserve(sku, qty) never checks stock, so available() goes negative.
+Repro:
+  inv = Inventory(); inv.restock('A', 2); inv.reserve('A', 5); inv.available('A')  # -3
+Expected: raise InsufficientStock('A', requested=5, available=2) and leave reservations unchanged.
+InsufficientStock already exists in shop/inventory.py but is never raised.",bug;inventory,P1,
+2,Add Cart.item_count(),"We need Cart.item_count() returning the total quantity across all lines (sum of qty), 0 for an empty cart. Add tests in tests/test_cart.py.",change_request;cart,P3,
+3,Why does with_tax round half up instead of banker's rounding?,"Question only: with_tax(1, 50) returns 2. Is ROUND_HALF_UP intentional for tax? No code change requested.",question;pricing,P3,

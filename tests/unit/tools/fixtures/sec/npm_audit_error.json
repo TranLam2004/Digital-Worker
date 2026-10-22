@@ -1,0 +1,4 @@
+{
+  "message": "400 Bad Request - POST https://registry.example/-/npm/v1/security/advisories/bulk",
+  "method": "POST"
+}

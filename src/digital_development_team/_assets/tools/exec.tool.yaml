@@ -1,0 +1,20 @@
+# exec.* — runs commands in the sandbox. Variant = profile: run → dev · run:readonly → verifier · run:scan → scan.
+namespace: exec
+sandbox: true
+artifactize: true
+ops:
+  - name: run
+    risk_tier: hard_write
+    allowed_roles: [dev, verifier, security]
+    timeout_sec: 120
+    sandbox_profile: inherit
+    description: "Run a shell command in the sandbox; cwd = worktree, no network, default timeout 120 s (max 600). A non-zero exit is NOT a tool error — it is information. Returns exit_code, stdout, stderr, stdout_tail, stderr_tail, line counts, duration_ms, profile. Errors: TIMEOUT, EROFS (read-only profile but the command wrote files), BAD_ARGS. Deny-listed commands (rm -rf, curl, …) are blocked."
+    input_schema:
+      type: object
+      properties:
+        cmd: { type: string }
+        cwd: { type: string, description: "Relative to the worktree. Default '.'" }
+        timeout: { type: integer, minimum: 1, maximum: 600 }
+        stdin: { type: string }
+      required: [cmd]
+      additionalProperties: false

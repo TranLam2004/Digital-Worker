@@ -1,0 +1,98 @@
+# budgets.yaml — hard limits per stage × tier. Hitting one → circuit breaker.
+# turn = number of LLM turns · wall = MINUTES · tokens = total in+out for the stage.
+# The issue cap is a REAL CONSTRAINT: `ddt config check` requires cap ≥ Σ stage ceilings + 1 rework.
+version: 1
+
+stages:
+  TRIAGE:
+    T0: { turn: 1,  wall: 0.5, tokens: 5000 }
+    T1: { turn: 1,  wall: 0.5, tokens: 5000 }
+    T2: { turn: 2,  wall: 1,   tokens: 8000 }
+    T3: { turn: 2,  wall: 1,   tokens: 8000 }
+  LOCALIZE:
+    T0: { turn: 3,  wall: 1,   tokens: 15000 }
+    T1: { turn: 3,  wall: 2,   tokens: 30000 }
+    T2: { turn: 4,  wall: 3,   tokens: 40000 }
+    T3: { turn: 4,  wall: 3,   tokens: 40000 }
+  SPEC:
+    T0: { turn: 1,  wall: 0.5, tokens: 8000 }
+    T1: { turn: 2,  wall: 1,   tokens: 15000 }
+    T2: { turn: 3,  wall: 1.5, tokens: 20000 }
+    T3: { turn: 3,  wall: 2,   tokens: 25000 }
+    change_request_multiplier: 2.0
+  IMPLEMENT:
+    T0: { turn: 14, wall: 5,   tokens: 60000 }
+    T1: { turn: 25, wall: 12,  tokens: 150000 }
+    T2: { turn: 30, wall: 15,  tokens: 200000 }
+    T3: { turn: 35, wall: 20,  tokens: 300000 }
+    rework_bump: 1
+  VERIFY:
+    T0: { turn: 4,  wall: 1,   tokens: 15000 }
+    T1: { turn: 8,  wall: 3,   tokens: 40000 }
+    T2: { turn: 10, wall: 4,   tokens: 60000 }
+    T3: { turn: 12, wall: 5,   tokens: 80000 }
+  REVIEW:
+    T0: { turn: 1,  wall: 0.5, tokens: 5000 }
+    T1: { turn: 1,  wall: 0.5, tokens: 5000 }
+    T2: { turn: 3,  wall: 1.5, tokens: 20000 }
+    T3: { turn: 6,  wall: 4,   tokens: 50000 }
+  GATE:
+    T0: { turn: 1,  wall: 0.3, tokens: 4000 }
+    T1: { turn: 1,  wall: 0.3, tokens: 4000 }
+    T2: { turn: 1,  wall: 0.5, tokens: 6000 }
+    T3: { turn: 2,  wall: 1,   tokens: 8000 }
+  LEARN:                       # off the critical path: search memory, save a lesson, maybe a fact/skill
+    any: { turn: 6,  wall: 3,   tokens: 30000 }
+  ANSWER:
+    any: { turn: 2,  wall: 1,   tokens: 10000 }
+
+# CLI transport (Claude Code headless): every turn also carries Claude Code's own system prompt + the MCP tool schemas
+# (~8–12k tokens, mostly cache reads, STILL counted in tokens_in) and a process spawn (~3–10 s). Added to the stage ceiling
+# IF AND ONLY IF the role resolves to the claude_cli provider adapter — API budgets are unchanged. Measured 2026-10-03.
+transport_overhead:
+  cli: { tokens_per_turn: 12000, wall_s_per_turn: 15 }
+  # Codex CLI reports every MCP tool call as a "turn" (no per-model-turn usage in `codex exec --json`), so the turn cap is
+  # multiplied; tokens arrive once at the end of each exec. Estimates — re-measure with the contest account
+  # (an empty `codex exec --json` gives the base overhead).
+  codex: { tokens_per_turn: 4000, wall_s_per_turn: 6, turn_factor: 3 }
+
+# Real constraint. 1 pass + 1 rework (IMPLEMENT + VERIFY) must fit within the cap.
+issue:
+  T0: { tokens: 200000,  wall: 15 }
+  T1: { tokens: 500000,  wall: 40 }
+  T2: { tokens: 750000,  wall: 60 }
+  T3: { tokens: 1200000, wall: 90 }
+
+session:
+  tokens: 5000000
+  usd: 100
+  warn_at: 0.60
+  economy_at: 0.80
+  stop_new_at: 0.95
+  reserve_for_t3: 0.05
+
+warnings:
+  at_60: { emit: budget_warning }
+  at_80: { emit: budget_warning, condenser: compress_now }
+  at_90: { emit: budget_warning, agent_message: "10% of the budget left. Prioritize writing your output." }
+  at_100: { emit: circuit_breaker, agent_final_turn_sec: 30 }
+
+tools:
+  fs: 5
+  exec: 120
+  test: 240
+  codegraph: 10
+  blackboard: 5
+  memory: 5
+  user_ask: inherit
+  llm_ask: { per_call_tokens: 2000, per_stage_calls: 5, model: haiku }
+
+economy:
+  wip_limit: 1
+  self_review: false
+  memory_block_tokens: 600
+  fast_path_complexity: [trivial, small]
+  canary: false
+  stages:
+    IMPLEMENT: { T1: { turn: 18, wall: 8, tokens: 100000 } }
+    VERIFY:    { T1: { turn: 6,  wall: 2, tokens: 30000 } }

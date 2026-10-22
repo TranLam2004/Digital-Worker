@@ -1,0 +1,81 @@
+# fs.* — filesystem inside the worktree. Every path resolves under $WORKTREE; escaping it → deny (path_normalize hook).
+namespace: fs
+sandbox: false
+artifactize: true
+ops:
+  - name: list
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev]
+    timeout_sec: 5
+    description: "List files under a worktree directory (depth ≤4, default 2), skipping .git, node_modules, caches and build output. Returns entries[{path, type, lines, lang}] (≤200, plus a truncated flag). skeleton=true adds symbols (def/class/function signatures, ≤40 per code file). Error: NOT_FOUND if path is not a directory."
+    input_schema:
+      type: object
+      properties:
+        path: { type: string, description: "Directory, relative to the worktree. Default '.'" }
+        depth: { type: integer, minimum: 1, maximum: 4 }
+        skeleton: { type: boolean }
+      additionalProperties: false
+  - name: read
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev, verifier, security]
+    timeout_sec: 5
+    description: "Read a UTF-8 text file (≤5 MB) or an artifact://… ref. lines='42-80' returns only that range plus 5 lines of context each side, line-numbered. Over 300 lines without `lines` → saved as an artifact with a 20-line preview; then read ranges. Returns path, lines_total, lines_returned, lang, content. Errors: NOT_FOUND (try fs.search / fs.list), TOO_LARGE (>5 MB or binary)."
+    input_schema:
+      type: object
+      properties:
+        path: { type: string }
+        lines: { type: string, pattern: "^[0-9]+-[0-9]+$" }
+      required: [path]
+      additionalProperties: false
+  - name: search
+    risk_tier: read
+    allowed_roles: [planner, analyst, dev, verifier, security]
+    timeout_sec: 10
+    description: "Search the worktree with ripgrep: literal string by default, regex=true for a regex (a literal with 0 matches that looks like a regex, e.g. `a|b`, is retried as one: result has regex=true). `max` matches defaults to 50 (≤200). Costs 0 LLM tokens — step 1 of localization. Returns matches[{path, line, text}] (text ≤200 chars), count, truncated. .git, node_modules and caches are skipped."
+    input_schema:
+      type: object
+      properties:
+        pattern: { type: string }
+        path: { type: string, description: "Directory or file to limit the search to. Default '.'" }
+        regex: { type: boolean }
+        max: { type: integer, minimum: 1, maximum: 200 }
+      required: [pattern]
+      additionalProperties: false
+  - name: write
+    risk_tier: soft_write
+    allowed_roles: [dev]
+    timeout_sec: 5
+    description: "Create a file or overwrite it completely with `content`. The path must be in spec.allowed_files (otherwise denied); sensitive paths require tier T3. An existing file keeps its line endings. Prefer fs.edit for changes to existing files. Returns path, bytes, created (true = new file)."
+    input_schema:
+      type: object
+      properties:
+        path: { type: string }
+        content: { type: string }
+      required: [path, content]
+      additionalProperties: false
+  - name: edit
+    risk_tier: soft_write
+    allowed_roles: [dev]
+    timeout_sec: 5
+    description: "Replace the exact string `old` with `new` in a file. `old` must occur exactly once unless all=true (replaces every occurrence). Original line endings are kept; same scope rules as fs.write. Returns path, replacements, line. Errors: EDIT_NO_MATCH (re-read with fs.read and copy the text exactly), EDIT_AMBIGUOUS (add context or set all=true), NOT_FOUND (use fs.write to create)."
+    input_schema:
+      type: object
+      properties:
+        path: { type: string }
+        old: { type: string }
+        new: { type: string }
+        all: { type: boolean }
+      required: [path, old, new]
+      additionalProperties: false
+  - name: delete
+    risk_tier: destructive
+    allowed_roles: [dev]
+    gate: G2
+    timeout_sec: 5
+    description: "Delete a file. Destructive — it only runs after a human approves at gate G2. Returns path. Error: NOT_FOUND."
+    input_schema:
+      type: object
+      properties:
+        path: { type: string }
+      required: [path]
+      additionalProperties: false

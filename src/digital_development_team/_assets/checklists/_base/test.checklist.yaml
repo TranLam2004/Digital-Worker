@@ -1,0 +1,152 @@
+# _base/test — the test portion of every patch. 14 items. Run by the Verifier (regex/test items by the harness first).
+meta:
+  name: test-base
+  source: base
+  applies_to_default: [patch]
+  version: 1
+  owner: P2
+
+items:
+  # ───── Tampering — regex/diff, blocking ─────
+  - id: TEST-001
+    text: "No assert in an existing test is removed or modified (removed_lines contains an assert that no AC requires removing)"
+    rationale: "Prevents making a test pass by editing the test instead of the code, which is a fake pass."
+    verify: regex
+    pattern: "^-\\s*(assert\\b|expect\\(|assertEquals|assertTrue|should\\.|\\.toBe\\(|\\.toEqual\\()"
+    pattern_scope: removed_lines
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "not any(ac.text.contains('test') for ac in spec.acceptance_criteria)"
+    enabled: true
+
+  - id: TEST-002
+    text: "No expected value in an existing test is changed to match the new output"
+    rationale: "Prevents fitting the test to the code instead of the code to the test, which hides a behaviour regression."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: TEST-003
+    text: "No skip/xfail/only/.skip marker is added to an existing test"
+    rationale: "Prevents disabling a test to hide the regression it would otherwise report."
+    verify: regex
+    pattern: "^\\+.*(@pytest\\.mark\\.(skip|xfail)|@skip|\\.skip\\(|\\.only\\(|xit\\(|fit\\(|t\\.Skip\\(|@Ignore|@Disabled)"
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  # ───── Coverage — test metric, 0 LLM ─────
+  - id: TEST-004
+    text: "Coverage delta is ≥ −2% relative to the baseline"
+    rationale: "Prevents a patch from leaving the repository less tested than it was before the change."
+    verify: test
+    test_ref: coverage_delta
+    threshold: ">= -2"
+    severity: major
+    applies_to: [patch]
+    applies_when: "repo.tooling.coverage"
+    enabled: true
+
+  - id: TEST-005
+    text: "New lines of code in src/ are covered (uncovered_new_lines is empty or ≤ 3)"
+    rationale: "Prevents untested new code whose correctness is unknown because no test exercises it."
+    verify: test
+    test_ref: uncovered_new_lines
+    threshold: "<= 3"
+    severity: major
+    applies_to: [patch]
+    applies_when: "repo.tooling.coverage and intake.type != 'question'"
+    enabled: true
+
+  # ───── Bug → reproducing test ─────
+  - id: TEST-006
+    text: "A bug fix includes a new test that reproduces the bug (the test FAILS before the patch — checked via git stash or impl_log)"
+    rationale: "Prevents an unproven fix: without a test that failed before the patch there is no evidence the bug ever existed."
+    verify: diff_inspection
+    severity: blocking
+    applies_to: [patch]
+    applies_when: "intake.type == 'bug'"
+    enabled: true
+
+  - id: TEST-007
+    text: "New tests have behaviour-describing names (test_<fn>_<case>, it('should ...')), not test_1/test_fix"
+    rationale: "Prevents a failing test that nobody can interpret without reading its body."
+    verify: regex
+    pattern: "^\\+\\s*(def test_(\\d+|fix|new|temp|tmp)\\b|it\\(['\"](test|fix|works?)['\"]\\))"
+    pattern_scope: added_lines
+    severity: minor
+    applies_to: [patch]
+    enabled: true
+
+  # ───── Edge cases — agent ─────
+  - id: TEST-008
+    text: "New tests cover at least one edge case beyond the happy path (empty/null/negative/boundary/error)"
+    rationale: "Prevents assuming correctness from a passing happy path while boundary inputs still break."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "intake.type in ['bug', 'change_request']"
+    enabled: true
+
+  - id: TEST-009
+    text: "Tests do not depend on execution order, real time, network or global state (no sleep(), no unmocked datetime.now(), no real requests.get)"
+    rationale: "Prevents flaky tests that fail intermittently and erode trust in the whole suite."
+    verify: regex
+    pattern: "^\\+.*(time\\.sleep\\(|datetime\\.now\\(\\)|requests\\.(get|post)\\(|fetch\\(['\"]https?://|new Date\\(\\)(?!.*mock))"
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/test*/**', '**/*.test.*', '**/*_test.*', '**/spec/**'])"
+    enabled: true
+
+  - id: TEST-010
+    text: "Mocks and fixtures used in tests match the real code after the patch (a changed service means its mock fixture is updated too)"
+    rationale: "Prevents a stale mock that makes tests pass against behaviour the real code no longer has."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/service*/**', '**/repository*/**', '**/client*/**'])"
+    enabled: true
+
+  # ───── Fake pass — a test that cannot fail is not evidence ─────
+  - id: TEST-011
+    text: "No trivially-true assertion is added (assert True, assert 1, assertTrue(True), expect(true).toBe(true))"
+    rationale: "Prevents a test that passes whatever the code does, which turns a green run into false evidence."
+    verify: regex
+    pattern: '^\+\s*(assert\s+(True|1|not\s+(False|None|0))\s*(#.*)?$|self\.assertTrue\(\s*True\s*\)|expect\(\s*true\s*\)\.toBe\(\s*true\s*\))'
+    pattern_scope: added_lines
+    severity: blocking
+    applies_to: [patch]
+    enabled: true
+
+  - id: TEST-012
+    text: "Exception assertions name the specific exception (no pytest.raises(Exception) / assertRaises(Exception))"
+    rationale: "Prevents a test that passes on any crash, including the one the fix should have removed."
+    verify: regex
+    pattern: '^\+.*(pytest\.raises\(\s*(Base)?Exception\s*[,)]|assertRaises\(\s*(Base)?Exception\s*[,)])'
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    enabled: true
+
+  - id: TEST-013
+    text: "Tests reach behaviour through the public API, not private internals (no monkeypatching _private attributes, no __dict__ poking, no reflection)"
+    rationale: "Prevents tests coupled to implementation details that pass while the public behaviour is wrong and break on any refactor."
+    verify: regex
+    pattern: '^\+.*(monkeypatch\.setattr\([^)]*[''\"]_[a-z]\w*[''\"]|__dict__\[|getDeclaredMethod|setAccessible\(\s*true\s*\))'
+    pattern_scope: added_lines
+    severity: major
+    applies_to: [patch]
+    applies_when: "any_match(files_touched, ['**/test*/**', '**/test_*.py', '**/*_test.*', '**/*.test.*', '**/spec/**'])"
+    enabled: true
+
+  - id: TEST-014
+    text: "impl_log.md records a mutation spot-check: one condition/value in the changed rule was flipped, the affected test FAILED, and the change was reverted"
+    rationale: "Proves the new or changed test can actually fail; coverage alone cannot show that an assertion checks the right thing."
+    verify: diff_inspection
+    severity: major
+    applies_to: [patch]
+    applies_when: "intake.type in ['bug', 'change_request']"
+    enabled: true

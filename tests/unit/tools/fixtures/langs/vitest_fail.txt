@@ -1,0 +1,8 @@
+ ❯ test/inventory.test.ts (4 tests | 1 failed) 6ms
+   × reserve over stock 3ms
+     → expected [Function] to throw an error
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  10:12:01
+   Duration  412ms

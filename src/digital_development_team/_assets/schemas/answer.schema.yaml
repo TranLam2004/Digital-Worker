@@ -1,0 +1,75 @@
+# answer.schema.yaml — the reply to a backlog item of type `question` (fast path TRIAGE → ANSWER → DONE)
+# Written by Dev in ANSWER mode: read-only tools, no code change. The harness scans it for secrets before closing.
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "ddt/answer"
+title: Answer
+type: object
+additionalProperties: false
+required: [issue_id, answer, references, confidence]
+
+properties:
+  issue_id:
+    type: string
+    pattern: "^DDT-[0-9]{4,}$"
+    description: Internal issue id (DDT-nnnn). Copy it from the brief.
+
+  answer:
+    type: string
+    minLength: 20
+    maxLength: 4000
+    description: |
+      Markdown reply for the person who asked. Plain language: what the code does today, why, and what that means for
+      them. Every claim about the code must be backed by an entry in `references`. If the honest answer is "it is a bug",
+      say so and add a follow_up.
+
+  references:
+    type: array
+    minItems: 1
+    maxItems: 10
+    items:
+      type: string
+      maxLength: 200
+    description: Where each claim comes from, as `path:line`, `path#symbol` or `REPO.md#section`.
+
+  confidence:
+    type: number
+    minimum: 0
+    maximum: 1
+    description: How sure you are the answer is correct and complete, 0..1.
+
+  resolution:
+    type: string
+    enum: [not_reproducible, already_fixed, works_as_intended, duplicate, no_change_needed]
+    description: |
+      Only when Dev concludes at IMPLEMENT that no code change is needed. Back it with evidence in `answer` and
+      `references` (test output, file:line). The Leader decides whether to close the issue.
+
+  follow_up:
+    type: array
+    maxItems: 3
+    description: |
+      Issues worth opening if the question reveals a bug or a missing feature. The harness does not create them;
+      a human decides.
+    items:
+      type: object
+      additionalProperties: false
+      required: [title, type]
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        type:
+          type: string
+          enum: [bug, change_request, refactor, docs, test, config, dependency, perf, chore]
+        reason:
+          type: string
+          maxLength: 300
+
+examples:
+  - issue_id: DDT-0003
+    answer: |
+      `mean()` returns a float even for integer input because it divides with `/`, which is true division in Python 3
+      (`calc.py:12`). `mean([1, 2, 3])` is `2.0`, not `2`. This is intended: the docstring promises a float. If you need
+      an int, round the result yourself or use `statistics.mean`, which keeps ints for exact results.
+    references: ["calc.py:12", "calc.py#mean", "REPO.md#conventions"]
+    confidence: 0.86

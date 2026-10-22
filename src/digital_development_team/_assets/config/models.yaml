@@ -1,0 +1,193 @@
+# models.yaml — providers · alias → {provider, model, family, effort} · per-role assignment · presets.
+# Agent frontmatter uses ALIASES only; models.yaml#roles overrides the frontmatter. Changing provider = edit here.
+# DEFAULT: tiered Anthropic Haiku / Sonnet / Opus. Other providers are enabled when a key is available.
+version: 2
+
+providers:
+  anthropic:
+    adapter: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    base_url: null
+    supports: [tool_use, prompt_cache, streaming]
+    enabled: true
+  openai:
+    adapter: openai
+    api_key_env: OPENAI_API_KEY
+    base_url: null
+    supports: [tool_use, streaming]
+    enabled: false
+  google:
+    adapter: gemini
+    api_key_env: GOOGLE_API_KEY
+    supports: [tool_use, streaming]
+    enabled: false
+  azure_openai:
+    adapter: openai
+    api_key_env: AZURE_OPENAI_KEY
+    base_url: "${AZURE_OPENAI_ENDPOINT}"
+    supports: [tool_use, streaming]
+    enabled: false
+  bedrock:
+    adapter: bedrock
+    region_env: AWS_REGION
+    supports: [tool_use, streaming]
+    enabled: false
+  local:
+    adapter: openai_compatible
+    base_url: "http://localhost:11434/v1"
+    api_key_env: null
+    supports: [streaming]
+    enabled: false
+  anthropic_cli:                 # Claude Code CLI headless (`claude -p`) — subscription, NO key needed
+    adapter: claude_cli          # the loop runs inside the CLI (RunAgent); single-call roles use `-p --output-format json`
+    binary: claude               # on PATH (npm). ddt config check verifies the binary
+    auth: subscription           # quota per plan (5-hour + weekly windows), not per token
+    supports: [agent_loop, tool_use, prompt_cache]
+    enabled: false               # enabled via preset cli_build / cli_all (--provider cli)
+    cli:                         # REQUIRED flags
+      tools: []                  # disables every built-in tool — DDT MCP only
+      mcp_config: state/ddt-mcp.json
+      setting_sources: [user]    # does NOT load CLAUDE.md / .claude from the target repo
+      permission_prompt_tool: mcp__ddt__policy
+      output_format: stream-json
+      max_turns_from: budgets.stages.IMPLEMENT.turn   # CLI 2.1 has no --max-turns yet → the harness counts turns and kills
+  codex_cli:                     # Codex CLI headless (`codex exec`) — REQUIRED platform for the Shark contest
+    adapter: codex_cli           # the loop runs inside codex (RunAgent); single-call roles use `codex exec --json` without tools
+    binary: codex                # on PATH (npm @openai/codex). Windows: the native codex.exe under vendor/ is called directly
+    auth: subscription           # `codex login` (contest account); credits are what the judges count
+    supports: [agent_loop, tool_use, prompt_cache]
+    enabled: false               # enabled via preset codex_all (--provider codex)
+    codex:
+      disable_features: [shell_tool, apps, plugins, browser_use, computer_use, multi_agent, image_generation, hooks, goals, in_app_browser, skill_search, tool_suggest]
+      sandbox: read-only         # Codex built-in apply_patch is blocked — files change only through DDT fs.write/fs.edit
+      ignore_user_config: true   # personal ~/.codex/config.toml (MCP servers, plugins) is NOT loaded
+      ignore_rules: true
+      project_doc_max_bytes: 0   # does NOT load AGENTS.md from the target repo (prompt-injection channel)
+      codex_home: null           # set to an isolated CODEX_HOME holding the contest account login if needed
+      mcp_startup_timeout_s: 60
+      mcp_tool_timeout_s: 600
+  mock:
+    adapter: mock
+    supports: [tool_use, prompt_cache, streaming]
+    enabled: true                # always on — tests/dry-run; --provider mock forces every alias here
+
+aliases:
+  haiku:    { provider: anthropic, model: claude-haiku-4-5-20251001, family: claude, effort: low }
+  sonnet:   { provider: anthropic, model: claude-sonnet-5-5,         family: claude, effort: medium }
+  opus:     { provider: anthropic, model: claude-opus-5-5,           family: claude, effort: medium }
+  fable:    { provider: anthropic, model: claude-fable-5-1,          family: claude, effort: high }
+  gpt_mini: { provider: openai,  model: gpt-5-mini,       family: gpt }
+  gpt:      { provider: openai,  model: gpt-5,            family: gpt }
+  gemini:   { provider: google,  model: gemini-2.5-pro,   family: gemini }
+  gemini_f: { provider: google,  model: gemini-2.5-flash, family: gemini }
+  local_7b: { provider: local,   model: qwen2.5-coder:7b, family: local }
+  mock:     { provider: mock,    model: mock,             family: mock }
+  # same Claude models over the CLI transport (subscription) — family stays claude so must_differ_family_from stays correct
+  opus_cli:   { provider: anthropic_cli, model: claude-opus-5-5,           family: claude, effort: medium }
+  sonnet_cli: { provider: anthropic_cli, model: claude-sonnet-5-5,         family: claude, effort: medium }
+  haiku_cli:  { provider: anthropic_cli, model: claude-haiku-4-5-20251001, family: claude, effort: low }
+  fable_cli:  { provider: anthropic_cli, model: claude-fable-5-1,          family: claude, effort: high }
+  alt_mid:    null
+  alt_strong: null
+
+roles:
+  intake:              { model: haiku,  fallback: sonnet }
+  planner:             { model: sonnet, fallback: opus }
+  analyst:             { model: sonnet, fallback: haiku }
+  dev:                 { model: opus,   fallback: sonnet }
+  dev_rework:          { model: fable,  fallback: opus }
+  dev_strong:          { model: fable,  fallback: opus }
+  verifier:            { model: sonnet, fallback: haiku, prefer: alt_mid, must_differ_family_from: dev }
+  verifier_peer:       { model: opus,   fallback: sonnet, prefer: alt_strong, must_differ_family_from: verifier }
+  security:            { model: sonnet, fallback: haiku }
+  leader:              { model: opus,   fallback: sonnet }
+  learner:             { model: haiku,  fallback: sonnet }
+  condenser_summarize: { model: haiku }
+  episode_summarize:   { model: haiku }
+  llm_ask:             { model: haiku }
+  llm_second_opinion:  { model: opus, fallback: sonnet }   # llm.ask mode=second_opinion (1 lần/stage)
+
+presets:
+  default:
+    note: "Tiered Anthropic. Without an alt, the Verifier uses the same family at a different size."
+  mixed_verifier:
+    providers.openai.enabled: true
+    aliases.alt_mid: { provider: openai, model: gpt-5-mini, family: gpt }
+    aliases.alt_strong: { provider: openai, model: gpt-5, family: gpt }
+  all_openai:
+    providers.anthropic.enabled: false
+    providers.openai.enabled: true
+    aliases.haiku:  { provider: openai, model: gpt-5-mini, family: gpt }
+    aliases.sonnet: { provider: openai, model: gpt-5,      family: gpt }
+    aliases.opus:   { provider: openai, model: gpt-5,      family: gpt }
+    aliases.fable:  { provider: openai, model: gpt-5,      family: gpt }
+    note: "Verifier is in the same family as Dev — loses the cross-family advantage. Consider gemini for the verifier."
+  economy:
+    roles.planner.model: haiku
+    roles.analyst.model: haiku
+    roles.dev.model: sonnet
+    roles.dev_rework.model: opus
+    roles.leader.model: sonnet
+  cli_build:                     # build/pilot on a subscription: only Dev goes through the CLI, other roles use the API (key needed)
+    providers.anthropic_cli.enabled: true
+    roles.dev.model: opus_cli
+    roles.dev.fallback: opus     # CLI quota exhausted → falls back to the API, same model, same issue
+    note: "Dev via the Claude Code CLI; single-call roles still use the API."
+  cli_all:                       # no API key: EVERY role goes through the CLI (single call → -p json · loop → MCP). --provider cli
+    providers.anthropic_cli.enabled: true
+    aliases.haiku:  { provider: anthropic_cli, model: claude-haiku-4-5-20251001, family: claude, effort: low }
+    aliases.sonnet: { provider: anthropic_cli, model: claude-sonnet-5-5,         family: claude, effort: medium }
+    aliases.opus:   { provider: anthropic_cli, model: claude-opus-5-5,           family: claude, effort: medium }
+    aliases.fable:  { provider: anthropic_cli, model: claude-fable-5-1,          family: claude, effort: high }
+    note: "Verifier is in the same family as Dev (claude). The subscription quota is the real ceiling — risks #19."
+  codex_all:                     # Shark contest: EVERY role through Codex CLI. --provider codex
+    providers.codex_cli.enabled: true
+    providers.anthropic.enabled: false
+    # model ids: check against the contest Codex account (`codex` model picker) before the Trial round
+    aliases.haiku:  { provider: codex_cli, model: gpt-5.4-mini, family: gpt, effort: low }
+    aliases.sonnet: { provider: codex_cli, model: gpt-5.5,      family: gpt, effort: medium }
+    aliases.opus:   { provider: codex_cli, model: gpt-5.6,      family: gpt, effort: medium }
+    aliases.fable:  { provider: codex_cli, model: gpt-5.6,      family: gpt, effort: high }
+    # single-shot structured writing (spec, security verdict) needs little reasoning; Dev/Planner/Verifier stay medium
+    aliases.sonnet_lite: { provider: codex_cli, model: gpt-5.5, family: gpt, effort: low }
+    roles.analyst.model: sonnet_lite
+    roles.security.model: sonnet_lite
+    # fewer output tokens: no reasoning summary streamed back, terse prose (keys present in codex-cli 0.146)
+    providers.codex_cli.codex.extra_config: { model_reasoning_summary: none, model_verbosity: low }
+    note: "Verifier uses a separate context in the same GPT family. Official score ranks first; speed and credit contribute to tie-break bonus. Verify model IDs on the contest account."
+  mock_all:
+    aliases.haiku:  { provider: mock, model: mock, family: mock }
+    aliases.sonnet: { provider: mock, model: mock, family: mock }
+    aliases.opus:   { provider: mock, model: mock, family: mock }
+    aliases.fable:  { provider: mock, model: mock, family: mock }
+    note: "Tests/dry-run. --provider mock applies this preset."
+  local_dev:
+    providers.local.enabled: true
+    aliases.haiku:  { provider: local, model: qwen2.5-coder:7b, family: local }
+    aliases.sonnet: { provider: local, model: qwen2.5-coder:7b, family: local }
+    aliases.opus:   { provider: local, model: qwen2.5-coder:7b, family: local }
+    note: "Only for testing the runner. Quality is not good enough for real issues."
+
+rate:
+  rpm_cap: 50
+  tpm_cap: 400000
+  backoff: [1, 2, 4, 8, 16]
+  on_429_consecutive: 3
+  fallback_cooldown_sec: 300
+  per_provider: true
+
+# USD / 1M tokens — dashboard only. Check the real price list before going live.
+pricing:
+  claude-haiku-4-5-20251001: { in: 1.00,  out: 5.00,  cached_in: 0.10 }
+  claude-sonnet-5-5:         { in: 3.00,  out: 15.00, cached_in: 0.30 }
+  claude-opus-5-5:           { in: 15.00, out: 75.00, cached_in: 1.50 }
+  claude-fable-5-1:          { in: 15.00, out: 75.00, cached_in: 1.50 }
+  gpt-5-mini:                { in: 0.50,  out: 2.00 }
+  gpt-5:                     { in: 5.00,  out: 20.00 }
+  gemini-2.5-flash:          { in: 0.30,  out: 1.20 }
+  gemini-2.5-pro:            { in: 2.50,  out: 10.00 }
+  mock:                      { in: 0.0,   out: 0.0 }
+
+# Per transport — CLI = subscription: cost_usd 0, tokens are STILL counted (budget + dashboard)
+pricing_by_provider:
+  anthropic_cli: { in: 0, out: 0, cached_in: 0 }

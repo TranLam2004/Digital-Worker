@@ -1,0 +1,5 @@
+# How to return output by output_mode (appended to the end of OUTPUT CONTRACT)
+## tool_write
+When the work is done, call `blackboard_write` with `slot` = the slot named above and `content` = the artifact (a JSON object matching the schema above). The harness validates it against the schema; on failure you receive at most the first 5 errors — fix them and call again (at most 3 attempts). After a successful write, STOP: no summary, no explanation, no further tool calls. If you cannot produce a valid artifact, return `{"status": "blocked", "reason": "<specific reason>"}` as your final message instead of calling `blackboard_write`.
+## final_message
+Your final message must be **exactly one JSON object** matching the schema above — no prose before or after it, no Markdown code fences, no comments, no trailing text. The first character of the message is `{` and the last is `}`. The harness parses that message and writes it to the slot itself. If you cannot produce a valid artifact, the single JSON object must instead be `{"status": "blocked", "reason": "<specific reason>"}`.

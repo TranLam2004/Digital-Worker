@@ -1,0 +1,106 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "digital-development-team"
+dynamic = ["version"]
+description = "DDT — Digital Development Team: harness điều phối AI agent xử lý backlog trên repo có sẵn"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+  "pydantic>=2.7,<3",
+  "pyyaml>=6.0",
+  "jsonschema>=4.22",
+  "rfc3339-validator>=0.1.4",
+  "typer>=0.12",
+  "rich>=13",
+  "pathspec>=0.12",
+  "psutil>=5.9",
+  "anthropic>=0.40,<1",
+  "mcp>=1.2,<2",  # server uses the MCP 1.x low-level Server API
+  # tool chất lượng đóng gói sẵn — security.scan · test.coverage · test.run(affected) chạy ngay sau pip install
+  "bandit>=1.7",
+  "pip-audit>=2.7",
+  "detect-secrets>=1.5",
+  "coverage>=7.4",
+  "pytest-cov>=5",
+  "diff-cover>=9",
+  "pytest-testmon>=2.1",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.40"]
+win = ["pywin32>=306; sys_platform == 'win32'"]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10", "types-PyYAML", "types-jsonschema", "types-psutil"]
+# scanner/coverage cho security.scan · test.coverage · test.run(affected) — pure-Python, chạy Windows.
+# Thiếu → tool trả skipped + ddt config check cảnh báo, không chặn run.
+quality = []   # giữ tên extra cho tương thích; các gói đã nằm trong dependencies chính
+
+[project.scripts]
+ddt = "digital_development_team.cli.main:app"
+
+[tool.hatch.version]
+path = "src/digital_development_team/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/digital_development_team"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/", "tests/", "testdata/", "README.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -m 'not live'"
+markers = [
+  "live: gọi LLM thật, cần API key",
+  "slow: chạy >5s",
+  "windows_only: chỉ chạy trên Windows",
+]
+filterwarnings = ["error::DeprecationWarning:digital_development_team.*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+preview = true
+explicit-preview-rules = true  # chỉ bật rule preview được chọn đích danh (PLW1514)
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "PTH", "S", "PL", "RUF", "TID", "PLW1514"]
+ignore = [
+  "PLR0913", "PLR0912", "PLR0911", "PLR0915", "PLR0917", "PLR2004",  # đếm tham số/nhánh/magic number
+  "S603", "S607", "E501",
+  "TC001", "TC002", "TC003",  # Pydantic cần import lúc runtime; đã có from __future__ import annotations
+  "PLC0415",  # import lười có chủ đích (CLI, optional deps, cắt vòng import)
+  "RUF002", "RUF003",  # docstring/comment tiếng Việt dùng – và …
+]
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
+known-first-party = ["digital_development_team"]
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"builtins.eval".msg = "Dùng digital_development_team.expr"
+"os.system".msg = "Dùng digital_development_team.util.proc"
+"subprocess".msg = "Mọi process đi qua digital_development_team.util.proc (timeout + kill tree + encoding)"
+
+[tool.ruff.lint.per-file-ignores]
+"src/digital_development_team/util/proc.py" = ["TID251"]
+"src/digital_development_team/isolation/git.py" = ["TID251"]
+"tests/**" = ["S101", "PLR2004", "TID251", "S108"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src/digital_development_team"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["win32job", "win32api", "win32con"]
+ignore_missing_imports = true

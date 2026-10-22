@@ -1,0 +1,48 @@
+# sensitive_paths.yaml — glob → minimum tier. Onboarding appends entries from the risk-areas section of REPO.md.
+# fs.edit on a path listed here while tier < min_tier → policy DENY. Security mode → full when the diff touches one.
+version: 1
+
+paths:
+  - { glob: "**/auth/**",            min_tier: T3, reason: "authentication" }
+  - { glob: "**/authz/**",           min_tier: T3, reason: "authorization" }
+  - { glob: "**/session*",           min_tier: T3, reason: "session" }
+  - { glob: "**/jwt*",               min_tier: T3, reason: "token" }
+  - { glob: "**/crypto/**",          min_tier: T3, reason: "crypto" }
+  - { glob: "**/payment*/**",        min_tier: T3, reason: "money" }
+  - { glob: "**/billing/**",         min_tier: T3, reason: "money" }
+  - { glob: "**/migrations/**",      min_tier: T3, reason: "schema — cannot be reverted" }
+  - { glob: "**/alembic/**",         min_tier: T3, reason: "schema" }
+  - { glob: "**/config/**",          min_tier: T3, reason: "settings, possibly prod" }
+  - { glob: "**/settings*.py",       min_tier: T3, reason: "settings" }
+  - { glob: ".env*",                 min_tier: T3, reason: "secret — fs.* always denied" }
+  - { glob: "**/secrets/**",         min_tier: T3, reason: "secret — always denied" }
+  - { glob: ".github/**",            min_tier: T3, reason: "CI/CD" }
+  - { glob: ".gitlab-ci.yml",        min_tier: T3, reason: "CI/CD" }
+  - { glob: "Jenkinsfile",           min_tier: T3, reason: "CI/CD" }
+  - { glob: "Dockerfile*",           min_tier: T3, reason: "runtime" }
+  - { glob: "docker-compose*",       min_tier: T3, reason: "runtime" }
+  - { glob: "**/*.pem",              min_tier: T3, reason: "key — always denied" }
+  - { glob: "**/*.key",              min_tier: T3, reason: "key — always denied" }
+  - { glob: "**/clients/**",         min_tier: T2, reason: "external API" }
+  - { glob: "**/integrations/**",    min_tier: T2, reason: "external" }
+  - { glob: "requirements*.txt",     min_tier: T2, reason: "dependency" }
+  - { glob: "package.json",          min_tier: T2, reason: "dependency" }
+  - { glob: "package-lock.json",     min_tier: T2, reason: "dependency" }
+  - { glob: "go.mod",                min_tier: T2, reason: "dependency" }
+  - { glob: "pom.xml",               min_tier: T2, reason: "dependency" }
+  - { glob: "Cargo.toml",            min_tier: T2, reason: "dependency" }
+  - { glob: "**/schema*.py",         min_tier: T2, reason: "data model" }
+  - { glob: "**/models/**",          min_tier: T2, reason: "data model" }
+  - { glob: "**/router*.py",         min_tier: T2, reason: "public surface" }
+  - { glob: "**/routes/**",          min_tier: T2, reason: "public surface" }
+  - { glob: "**/api/v*/**",          min_tier: T2, reason: "versioned public API" }
+
+# fs.* denies these outright, regardless of tier
+never_touch:
+  - ".env"
+  - ".env.*"
+  - "**/secrets/**"
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/id_rsa*"
+  - ".git/**"
